@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import UserNavbar from '../../components/auth/UserNavbar';
+import IncidentLocationPicker from '../../components/citizen/IncidentLocationPicker';
 import '../../styles/report-garbage.css';
 
 const GARBAGE_TYPES = [
@@ -35,6 +36,12 @@ export default function ReportGarbage() {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
 
+  // Location states (Step 3) - null initially per requirements
+  const [latitude, setLatitude] = useState(null);
+  const [longitude, setLongitude] = useState(null);
+  const [locationStatus, setLocationStatus] = useState('idle');
+  const [locationError, setLocationError] = useState('');
+
   // Validation & workflow states
   const [validationErrors, setValidationErrors] = useState({});
   const [photoError, setPhotoError] = useState('');
@@ -55,7 +62,9 @@ export default function ReportGarbage() {
     description.trim() ||
     garbageType ||
     severity ||
-    selectedPhoto
+    selectedPhoto ||
+    latitude !== null ||
+    longitude !== null
   );
 
   const handleBack = () => {
@@ -136,6 +145,10 @@ export default function ReportGarbage() {
       errors.severity = 'Please select a severity level.';
     }
 
+    if (latitude === null || longitude === null) {
+      errors.location = 'Incident location is required. Please use your current location or click on the map to pinpoint the incident.';
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -149,7 +162,7 @@ export default function ReportGarbage() {
       return;
     }
 
-    // Per Phase 2 Step 2 requirements:
+    // Per Phase 2 Step 3 requirements:
     // DO NOT send data to Supabase yet.
     // Display temporary informational state confirming validation success.
     setIsFormReady(true);
@@ -195,7 +208,7 @@ export default function ReportGarbage() {
             </div>
             <h2>Form Validated &amp; Ready</h2>
             <div className="ready-status-alert" role="status">
-              <strong>Step 2 Foundation Completed:</strong> Form is ready. Location capture, 30-meter duplicate detection, photo upload to Supabase Storage, and live report submission will be connected in the next implementation steps.
+              <strong>Step 3 Location Foundation Completed:</strong> Form details and pin coordinates are validated. 30-meter duplicate detection, photo upload to Supabase Storage, and live report submission will be connected in the next implementation steps.
             </div>
 
             <div className="report-ready-summary">
@@ -223,8 +236,10 @@ export default function ReportGarbage() {
               </div>
               <div className="summary-row">
                 <span className="summary-row-label">Location:</span>
-                <span className="summary-row-value" style={{ fontStyle: 'italic' }}>
-                  Awaiting Step 3 GPS &amp; Map integration
+                <span className="summary-row-value">
+                  {latitude !== null && longitude !== null
+                    ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+                    : 'Location not selected'}
                 </span>
               </div>
             </div>
@@ -396,26 +411,33 @@ export default function ReportGarbage() {
               </div>
             </fieldset>
 
-            {/* Fieldset: Incident Location (Disabled Placeholder for Step 2) */}
+            {/* Fieldset: Incident Location */}
             <fieldset className="form-fieldset">
               <legend className="fieldset-legend">
-                <span className="legend-icon" aria-hidden="true">📍</span> Incident Location
+                <span className="legend-icon" aria-hidden="true">📍</span> Incident Location <span className="required-indicator" aria-hidden="true">*</span>
               </legend>
 
-              <div className="location-placeholder-card" role="region" aria-label="Location capture status">
-                <div className="location-icon" aria-hidden="true">
-                  🗺️
-                </div>
-                <div className="location-content">
-                  <h4>Location Capture (Pending Next Step)</h4>
-                  <p>
-                    Automatic GPS coordinate capture, interactive map pinning, and 30-meter duplicate detection will be activated in the next step. No fake coordinates are submitted.
-                  </p>
-                  <span className="location-status-badge">
-                    <span aria-hidden="true">⏳</span> GPS &amp; Map Pinning will be enabled next
-                  </span>
-                </div>
-              </div>
+              <IncidentLocationPicker
+                latitude={latitude}
+                longitude={longitude}
+                onLocationChange={({ lat, lng }) => {
+                  setLatitude(lat);
+                  setLongitude(lng);
+                  if (validationErrors.location) {
+                    setValidationErrors((prev) => ({ ...prev, location: undefined }));
+                  }
+                }}
+                locationStatus={locationStatus}
+                setLocationStatus={setLocationStatus}
+                locationError={locationError}
+                setLocationError={setLocationError}
+              />
+
+              {validationErrors.location && (
+                <span id="location-error" className="field-error-message" role="alert" style={{ marginTop: '0.25rem' }}>
+                  <span aria-hidden="true">⚠️</span> {validationErrors.location}
+                </span>
+              )}
             </fieldset>
 
             {/* Fieldset: Photo Evidence */}
