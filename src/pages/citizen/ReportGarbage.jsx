@@ -55,6 +55,14 @@ export default function ReportGarbage() {
   const [photoError, setPhotoError] = useState('');
   const [isFormReady, setIsFormReady] = useState(false);
 
+  // Duplicate detection states (Step 5)
+  const [duplicateChecking, setDuplicateChecking] = useState(false);
+  const [duplicateResult, setDuplicateResult] = useState(null);
+  const [noDuplicateFound, setNoDuplicateFound] = useState(false);
+  const [duplicateError, setDuplicateError] = useState('');
+  const [selectedDuplicateId, setSelectedDuplicateId] = useState(null);
+  const [duplicateConfirmedSame, setDuplicateConfirmedSame] = useState(false);
+
   // Clean up object URLs when photo changes or component unmounts
   useEffect(() => {
     return () => {
@@ -73,7 +81,8 @@ export default function ReportGarbage() {
     selectedPhoto ||
     uploadedPhotoPath ||
     latitude !== null ||
-    longitude !== null
+    longitude !== null ||
+    selectedDuplicateId !== null
   );
 
   const handleBack = () => {
@@ -246,7 +255,93 @@ export default function ReportGarbage() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  /**
+   * Runs duplicate detection via check_duplicate_report RPC.
+   * Proximity evaluation is performed at exactly 30 meters on the database.
+   */
+  const runDuplicateCheck = async () => {
+    if (duplicateChecking) return;
+    if (latitude === null || longitude === null) return;
+
+    setDuplicateChecking(true);
+    setDuplicateError('');
+    setDuplicateResult(null);
+    setNoDuplicateFound(false);
+    setSelectedDuplicateId(null);
+    setDuplicateConfirmedSame(false);
+
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('check_duplicate_report', {
+        p_latitude: latitude,
+        p_longitude: longitude,
+      });
+
+      if (rpcErr) {
+        console.error('Duplicate detection RPC error:', rpcErr);
+        setDuplicateError('Unable to check for nearby reports right now. Please verify your connection and try again.');
+        setDuplicateChecking(false);
+        return;
+      }
+
+      const row = Array.isArray(data) ? data[0] : data;
+
+      if (row?.is_duplicate && row?.existing_report_id) {
+        let extraTitle = null;
+        let extraType = null;
+
+        try {
+          const { data: repData } = await supabase
+            .from('reports')
+            .select('title, garbage_type')
+            .eq('id', row.existing_report_id)
+            .maybeSingle();
+
+          if (repData) {
+            extraTitle = repData.title;
+            extraType = repData.garbage_type;
+          }
+        } catch (repErr) {
+          console.warn('Could not fetch additional duplicate report details:', repErr);
+        }
+
+        setDuplicateResult({
+          id: row.existing_report_id,
+          status: row.existing_status,
+          distance: row.distance_meters,
+          supportersCount: row.supporters_count,
+          title: extraTitle,
+          garbageType: extraType,
+        });
+        setNoDuplicateFound(false);
+        setIsFormReady(false);
+      } else {
+        setDuplicateResult(null);
+        setNoDuplicateFound(true);
+        setIsFormReady(true);
+      }
+    } catch (err) {
+      console.error('Duplicate detection exception:', err);
+      setDuplicateError('Network error while checking for nearby reports. Please try again.');
+    } finally {
+      setDuplicateChecking(false);
+    }
+  };
+
+  const handleConfirmSameReport = () => {
+    if (!duplicateResult?.id) return;
+    setSelectedDuplicateId(duplicateResult.id);
+    setDuplicateConfirmedSame(true);
+  };
+
+  const handleConfirmDifferentReport = () => {
+    setSelectedDuplicateId(null);
+    setDuplicateConfirmedSame(false);
+    setDuplicateResult(null);
+    setNoDuplicateFound(true);
+    setIsFormReady(true);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const isValid = validateForm();
@@ -255,14 +350,15 @@ export default function ReportGarbage() {
       return;
     }
 
-    // Per Phase 2 Step 4 requirements:
-    // DO NOT send data to Supabase reports table yet.
-    // Display temporary informational state confirming validation success.
-    setIsFormReady(true);
+    // Step 5: Run duplicate detection before final report submission
+    await runDuplicateCheck();
   };
 
   const handleResetForEdit = () => {
     setIsFormReady(false);
+    setDuplicateResult(null);
+    setDuplicateConfirmedSame(false);
+    setSelectedDuplicateId(null);
   };
 
   return (
@@ -301,7 +397,7 @@ export default function ReportGarbage() {
             </div>
             <h2>Form Validated &amp; Ready</h2>
             <div className="ready-status-alert" role="status">
-              <strong>Step 4 Storage Upload Completed:</strong> Form details, pin coordinates, and photo storage path (report-photos/{user?.id || 'citizen'}/...) are validated. 30-meter duplicate detection and live report submission will be connected in the next implementation steps.
+              <strong>Step 5 Duplicate Detection Completed:</strong> {noDuplicateFound ? 'No nearby duplicate report found. ' : ''}Form details, 30-meter proximity verification, pin coordinates, and photo storage path (report-photos/{user?.id || 'citizen'}/...) are validated. Live report submission will be connected in the next step.
             </div>
 
             <div className="report-ready-summary">
@@ -343,6 +439,12 @@ export default function ReportGarbage() {
                     : 'Location not selected'}
                 </span>
               </div>
+              <div className="summary-row">
+                <span className="summary-row-label">Duplicate Check:</span>
+                <span className="summary-row-value" style={{ color: '#059669', fontWeight: 600 }}>
+                  ✓ No nearby duplicate report found within 30m
+                </span>
+              </div>
             </div>
 
             <div className="ready-actions-row">
@@ -370,6 +472,103 @@ export default function ReportGarbage() {
             noValidate
             aria-label="Report garbage incident form"
           >
+            {/* Duplicate Detection Confirmation Card (Step 5) */}
+            {duplicateResult && (
+              <section className="duplicate-alert-card" aria-live="polite">
+                <div className="duplicate-card-header">
+                  <span className="duplicate-icon" aria-hidden="true">📍</span>
+                  <div>
+                    <h3>Nearby Report Detected</h3>
+                    <p>An active report was found within 30 meters of your selected incident location.</p>
+                  </div>
+                </div>
+
+                <div className="duplicate-info-box">
+                  {duplicateResult.title && (
+                    <div className="duplicate-info-row">
+                      <span className="dup-label">Report Title:</span>
+                      <span className="dup-value"><strong>{duplicateResult.title}</strong></span>
+                    </div>
+                  )}
+                  {duplicateResult.garbageType && (
+                    <div className="duplicate-info-row">
+                      <span className="dup-label">Garbage Type:</span>
+                      <span className="dup-value">
+                        {GARBAGE_TYPES.find((t) => t.value === duplicateResult.garbageType)?.label || duplicateResult.garbageType}
+                      </span>
+                    </div>
+                  )}
+                  <div className="duplicate-info-row">
+                    <span className="dup-label">Status:</span>
+                    <span className="dup-value dup-status-badge">{duplicateResult.status}</span>
+                  </div>
+                  {duplicateResult.distance !== null && duplicateResult.distance !== undefined && (
+                    <div className="duplicate-info-row">
+                      <span className="dup-label">Approximate Distance:</span>
+                      <span className="dup-value">~{Math.round(duplicateResult.distance)} meters away</span>
+                    </div>
+                  )}
+                  <div className="duplicate-info-row">
+                    <span className="dup-label">Supporters:</span>
+                    <span className="dup-value">{duplicateResult.supportersCount || 0} citizen{duplicateResult.supportersCount === 1 ? '' : 's'}</span>
+                  </div>
+                </div>
+
+                {duplicateConfirmedSame ? (
+                  <div className="duplicate-same-confirmed" role="status">
+                    <p>
+                      <strong>Existing report selected. Support action will be connected in the next step.</strong>{' '}
+                      {selectedDuplicateId && (
+                        <span style={{ opacity: 0.85, fontSize: '0.85rem' }}>
+                          (Report ID: {selectedDuplicateId})
+                        </span>
+                      )}
+                    </p>
+                    <div className="ready-actions-row" style={{ marginTop: '0.85rem' }}>
+                      <button
+                        type="button"
+                        className="btn-form-cancel"
+                        onClick={() => {
+                          setDuplicateConfirmedSame(false);
+                          setSelectedDuplicateId(null);
+                        }}
+                      >
+                        Change Selection
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-form-submit"
+                        onClick={() => navigate('/citizen')}
+                      >
+                        Return to Dashboard
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="duplicate-actions-box">
+                    <p className="duplicate-question">Is this the same garbage accumulation you are reporting?</p>
+                    <div className="duplicate-buttons-row">
+                      <button
+                        type="button"
+                        id="btn-duplicate-same"
+                        className="btn-duplicate-action btn-duplicate-yes"
+                        onClick={handleConfirmSameReport}
+                      >
+                        Yes, this is the same issue
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-duplicate-no"
+                        className="btn-duplicate-action btn-duplicate-no"
+                        onClick={handleConfirmDifferentReport}
+                      >
+                        No, create a new report
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
             {/* Fieldset: Incident Details */}
             <fieldset className="form-fieldset">
               <legend className="fieldset-legend">
@@ -524,6 +723,12 @@ export default function ReportGarbage() {
                 onLocationChange={({ lat, lng }) => {
                   setLatitude(lat);
                   setLongitude(lng);
+                  setDuplicateResult(null);
+                  setNoDuplicateFound(false);
+                  setDuplicateError('');
+                  setSelectedDuplicateId(null);
+                  setDuplicateConfirmedSame(false);
+                  setIsFormReady(false);
                   if (validationErrors.location) {
                     setValidationErrors((prev) => ({ ...prev, location: undefined }));
                   }
@@ -642,6 +847,27 @@ export default function ReportGarbage() {
               </div>
             </fieldset>
 
+            {/* Duplicate Checking and Error Banners */}
+            {duplicateChecking && (
+              <div className="duplicate-checking-banner" role="status">
+                <span className="status-spinner" aria-hidden="true" />
+                <span>Checking for nearby reports...</span>
+              </div>
+            )}
+
+            {duplicateError && (
+              <div className="duplicate-error-banner" role="alert">
+                <span>⚠️ {duplicateError}</span>
+                <button
+                  type="button"
+                  onClick={runDuplicateCheck}
+                  className="btn-retry-check"
+                >
+                  Retry Check
+                </button>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="form-actions-row">
               <button
@@ -654,9 +880,15 @@ export default function ReportGarbage() {
               <button
                 type="submit"
                 className="btn-form-submit"
-                disabled={photoUploading}
+                disabled={photoUploading || duplicateChecking}
               >
-                <span>{photoUploading ? 'Uploading Photo...' : 'Review & Validate Form'}</span>
+                <span>
+                  {duplicateChecking
+                    ? 'Checking for nearby reports...'
+                    : photoUploading
+                    ? 'Uploading Photo...'
+                    : 'Review & Validate Form'}
+                </span>
                 <span aria-hidden="true">→</span>
               </button>
             </div>
