@@ -15,6 +15,9 @@ import MyReports from './pages/citizen/MyReports';
 import ReportDetails from './pages/citizen/ReportDetails';
 import CitizenNotifications from './pages/citizen/CitizenNotifications';
 import WorkerDashboard from './pages/worker/WorkerDashboard';
+import WorkerReports from './pages/worker/WorkerReports';
+import WorkerReportDetails from './pages/worker/WorkerReportDetails';
+import WorkerNotifications from './pages/worker/WorkerNotifications';
 import AdminDashboard from './pages/admin/AdminDashboard';
 
 import './styles/auth.css';
@@ -87,6 +90,10 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<RoleGuard allowedRoles={['worker']} />}>
             <Route path="/worker" element={<WorkerDashboard />} />
+            <Route path="/worker/dashboard" element={<WorkerDashboard />} />
+            <Route path="/worker/reports" element={<WorkerReports />} />
+            <Route path="/worker/reports/:reportId" element={<WorkerReportDetails />} />
+            <Route path="/worker/notifications" element={<WorkerNotifications />} />
           </Route>
         </Route>
 
