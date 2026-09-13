@@ -11,6 +11,9 @@ import UpdatePassword from './pages/auth/UpdatePassword';
 
 import CitizenDashboard from './pages/citizen/CitizenDashboard';
 import ReportGarbage from './pages/citizen/ReportGarbage';
+import MyReports from './pages/citizen/MyReports';
+import ReportDetails from './pages/citizen/ReportDetails';
+import CitizenNotifications from './pages/citizen/CitizenNotifications';
 import WorkerDashboard from './pages/worker/WorkerDashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
 
@@ -74,6 +77,9 @@ export default function App() {
           <Route element={<RoleGuard allowedRoles={['citizen']} />}>
             <Route path="/citizen" element={<CitizenDashboard />} />
             <Route path="/citizen/report" element={<ReportGarbage />} />
+            <Route path="/citizen/reports" element={<MyReports />} />
+            <Route path="/citizen/reports/:reportId" element={<ReportDetails />} />
+            <Route path="/citizen/notifications" element={<CitizenNotifications />} />
           </Route>
         </Route>
 
