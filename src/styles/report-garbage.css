@@ -688,9 +688,67 @@
 }
 
 .photo-status-tag {
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 0.775rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.photo-status-tag.uploading {
+  color: #2563eb;
+}
+
+.photo-status-tag.success {
   color: #059669;
+}
+
+.photo-status-tag.error {
+  color: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  .photo-status-tag.uploading {
+    color: #60a5fa;
+  }
+  .photo-status-tag.success {
+    color: #34d399;
+  }
+  .photo-status-tag.error {
+    color: #f87171;
+  }
+}
+
+.photo-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-retry-upload {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 6px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-retry-upload:hover {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: #2563eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-retry-upload {
+    color: #60a5fa;
+    border-color: rgba(96, 165, 250, 0.35);
+  }
 }
 
 .btn-remove-photo {
@@ -706,9 +764,14 @@
   transition: all 0.15s ease;
 }
 
-.btn-remove-photo:hover {
+.btn-remove-photo:hover:not(:disabled) {
   background-color: rgba(239, 68, 68, 0.1);
   border-color: #ef4444;
+}
+
+.btn-remove-photo:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* --- Form Action Buttons --- */

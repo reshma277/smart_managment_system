@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import UserNavbar from '../../components/auth/UserNavbar';
 import IncidentLocationPicker from '../../components/citizen/IncidentLocationPicker';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import '../../styles/report-garbage.css';
 
 const GARBAGE_TYPES = [
@@ -23,10 +25,11 @@ const SEVERITY_LEVELS = [
 ];
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB
-const ALLOWED_PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+const ALLOWED_PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 
 export default function ReportGarbage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Form field states
   const [title, setTitle] = useState('');
@@ -35,6 +38,11 @@ export default function ReportGarbage() {
   const [severity, setSeverity] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
+
+  // Photo upload states (Step 4)
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadSuccess, setPhotoUploadSuccess] = useState(false);
+  const [uploadedPhotoPath, setUploadedPhotoPath] = useState(null);
 
   // Location states (Step 3) - null initially per requirements
   const [latitude, setLatitude] = useState(null);
@@ -63,6 +71,7 @@ export default function ReportGarbage() {
     garbageType ||
     severity ||
     selectedPhoto ||
+    uploadedPhotoPath ||
     latitude !== null ||
     longitude !== null
   );
@@ -77,20 +86,78 @@ export default function ReportGarbage() {
     navigate('/citizen');
   };
 
-  const handlePhotoSelect = (e) => {
+  /**
+   * Uploads the selected photo to the private report-photos bucket.
+   * Path format: report-photos/{authenticated-user-id}/{unique-file-name}
+   */
+  const uploadPhotoToStorage = async (file) => {
+    if (!user?.id) {
+      setPhotoError('You must be signed in to upload an incident photo.');
+      return null;
+    }
+
+    setPhotoUploading(true);
+    setPhotoUploadSuccess(false);
+    setPhotoError('');
+
+    // Clean up previous temporary uploaded photo if citizen replaces image
+    if (uploadedPhotoPath) {
+      try {
+        await supabase.storage.from('report-photos').remove([uploadedPhotoPath]);
+      } catch (err) {
+        console.warn('Could not clean up previous uploaded photo:', err);
+      }
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const sanitizedExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
+    const uniqueFileName = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${sanitizedExt}`;
+    const filePath = `${user.id}/${uniqueFileName}`;
+
+    try {
+      const { data, error: uploadErr } = await supabase.storage
+        .from('report-photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadErr) {
+        console.error('Storage upload error:', uploadErr);
+        setPhotoError(`Photo upload failed: ${uploadErr.message || 'Unable to store image.'}`);
+        setPhotoUploading(false);
+        return null;
+      }
+
+      setUploadedPhotoPath(data.path);
+      setPhotoUploadSuccess(true);
+      setPhotoUploading(false);
+      return data.path;
+    } catch (err) {
+      console.error('Storage upload exception:', err);
+      setPhotoError('Network error while uploading photo. Please try again.');
+      setPhotoUploading(false);
+      return null;
+    }
+  };
+
+  const handlePhotoSelect = async (e) => {
     setPhotoError('');
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate MIME type
-    if (!ALLOWED_PHOTO_MIMES.includes(file.type) && !file.type.startsWith('image/')) {
-      setPhotoError('Unsupported file format. Please choose an image (JPEG, PNG, or WebP).');
+    // Reset file input so identical file can be re-selected if desired
+    e.target.value = '';
+
+    // Validate MIME type (JPEG, PNG, WebP only)
+    if (!ALLOWED_PHOTO_MIMES.includes(file.type)) {
+      setPhotoError('Unsupported format. Only JPEG, PNG, and WebP images are permitted.');
       return;
     }
 
-    // Validate file size
+    // Validate file size (max 5 MB)
     if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError(`Photo exceeds 5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller image.`);
+      setPhotoError(`Photo exceeds 5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select an image under 5 MB.`);
       return;
     }
 
@@ -105,15 +172,37 @@ export default function ReportGarbage() {
     if (validationErrors.photo) {
       setValidationErrors((prev) => ({ ...prev, photo: undefined }));
     }
+
+    // Trigger storage upload
+    await uploadPhotoToStorage(file);
   };
 
-  const handleRemovePhoto = () => {
+  const handleRemovePhoto = async () => {
     if (photoPreviewUrl) {
       URL.revokeObjectURL(photoPreviewUrl);
     }
+
+    if (uploadedPhotoPath) {
+      const pathToRemove = uploadedPhotoPath;
+      setUploadedPhotoPath(null);
+      try {
+        await supabase.storage.from('report-photos').remove([pathToRemove]);
+      } catch (err) {
+        console.warn('Could not remove photo from storage:', err);
+      }
+    }
+
     setSelectedPhoto(null);
     setPhotoPreviewUrl(null);
+    setPhotoUploadSuccess(false);
+    setPhotoUploading(false);
     setPhotoError('');
+  };
+
+  const handleRetryUpload = () => {
+    if (selectedPhoto) {
+      uploadPhotoToStorage(selectedPhoto);
+    }
   };
 
   const validateForm = () => {
@@ -149,6 +238,10 @@ export default function ReportGarbage() {
       errors.location = 'Incident location is required. Please use your current location or click on the map to pinpoint the incident.';
     }
 
+    if (photoUploading) {
+      errors.photo = 'Photo is currently uploading. Please wait for the upload to complete before validating.';
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -162,8 +255,8 @@ export default function ReportGarbage() {
       return;
     }
 
-    // Per Phase 2 Step 3 requirements:
-    // DO NOT send data to Supabase yet.
+    // Per Phase 2 Step 4 requirements:
+    // DO NOT send data to Supabase reports table yet.
     // Display temporary informational state confirming validation success.
     setIsFormReady(true);
   };
@@ -208,7 +301,7 @@ export default function ReportGarbage() {
             </div>
             <h2>Form Validated &amp; Ready</h2>
             <div className="ready-status-alert" role="status">
-              <strong>Step 3 Location Foundation Completed:</strong> Form details and pin coordinates are validated. 30-meter duplicate detection, photo upload to Supabase Storage, and live report submission will be connected in the next implementation steps.
+              <strong>Step 4 Storage Upload Completed:</strong> Form details, pin coordinates, and photo storage path (report-photos/{user?.id || 'citizen'}/...) are validated. 30-meter duplicate detection and live report submission will be connected in the next implementation steps.
             </div>
 
             <div className="report-ready-summary">
@@ -231,7 +324,15 @@ export default function ReportGarbage() {
               <div className="summary-row">
                 <span className="summary-row-label">Photo:</span>
                 <span className="summary-row-value">
-                  {selectedPhoto ? `${selectedPhoto.name} (${(selectedPhoto.size / 1024).toFixed(0)} KB)` : 'None attached'}
+                  {uploadedPhotoPath ? (
+                    <>
+                      <span style={{ color: '#059669', fontWeight: 600 }}>✓ Uploaded</span> (report-photos/{uploadedPhotoPath})
+                    </>
+                  ) : selectedPhoto ? (
+                    `${selectedPhoto.name} (Upload pending)`
+                  ) : (
+                    'None attached'
+                  )}
                 </span>
               </div>
               <div className="summary-row">
@@ -466,27 +567,52 @@ export default function ReportGarbage() {
                         <span className="photo-filesize">
                           {(selectedPhoto.size / 1024).toFixed(0)} KB • {selectedPhoto.type || 'image'}
                         </span>
-                        <span className="photo-status-tag">
-                          ✓ Image selected locally (upload to storage enabled next)
-                        </span>
+                        {photoUploading && (
+                          <span className="photo-status-tag uploading" role="status">
+                            <span className="status-spinner" aria-hidden="true" /> Uploading to secure storage...
+                          </span>
+                        )}
+                        {photoUploadSuccess && (
+                          <span className="photo-status-tag success">
+                            <span aria-hidden="true">✓</span> Stored in report-photos/{uploadedPhotoPath}
+                          </span>
+                        )}
+                        {photoError && (
+                          <span className="photo-status-tag error" role="alert">
+                            <span aria-hidden="true">⚠️</span> {photoError}
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      className="btn-remove-photo"
-                      onClick={handleRemovePhoto}
-                      aria-label="Remove selected photo"
-                    >
-                      Remove Photo
-                    </button>
+                    <div className="photo-preview-actions">
+                      {photoError && (
+                        <button
+                          type="button"
+                          className="btn-retry-upload"
+                          onClick={handleRetryUpload}
+                          disabled={photoUploading}
+                        >
+                          Retry Upload
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-remove-photo"
+                        onClick={handleRemovePhoto}
+                        disabled={photoUploading}
+                        aria-label="Remove selected photo"
+                      >
+                        Remove Photo
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="photo-dropzone">
                     <input
                       id="report-photo-input"
                       type="file"
-                      accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                      accept="image/jpeg,image/png,image/webp"
                       className="photo-file-input"
                       onChange={handlePhotoSelect}
                       aria-label="Select photo of garbage incident (optional)"
@@ -496,15 +622,21 @@ export default function ReportGarbage() {
                       <span className="dropzone-icon" aria-hidden="true">📸</span>
                       <p className="dropzone-title">Click or tap to choose a photo</p>
                       <p id="photo-hint-msg" className="dropzone-hint">
-                        JPEG, PNG, or WebP up to 5 MB. Image upload will be handled securely in the next step.
+                        JPEG, PNG, or WebP up to 5 MB. Automatically uploaded to private municipal storage.
                       </p>
                     </div>
                   </div>
                 )}
 
-                {photoError && (
+                {photoError && !selectedPhoto && (
                   <span id="photo-error-msg" className="field-error-message" role="alert">
                     <span aria-hidden="true">⚠️</span> {photoError}
+                  </span>
+                )}
+
+                {validationErrors.photo && (
+                  <span id="photo-validation-error-msg" className="field-error-message" role="alert">
+                    <span aria-hidden="true">⚠️</span> {validationErrors.photo}
                   </span>
                 )}
               </div>
@@ -522,8 +654,9 @@ export default function ReportGarbage() {
               <button
                 type="submit"
                 className="btn-form-submit"
+                disabled={photoUploading}
               >
-                <span>Review &amp; Validate Form</span>
+                <span>{photoUploading ? 'Uploading Photo...' : 'Review & Validate Form'}</span>
                 <span aria-hidden="true">→</span>
               </button>
             </div>
