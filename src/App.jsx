@@ -10,6 +10,7 @@ import ForgotPassword from './pages/auth/ForgotPassword';
 import UpdatePassword from './pages/auth/UpdatePassword';
 
 import CitizenDashboard from './pages/citizen/CitizenDashboard';
+import ReportGarbage from './pages/citizen/ReportGarbage';
 import WorkerDashboard from './pages/worker/WorkerDashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
 
@@ -72,6 +73,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<RoleGuard allowedRoles={['citizen']} />}>
             <Route path="/citizen" element={<CitizenDashboard />} />
+            <Route path="/citizen/report" element={<ReportGarbage />} />
           </Route>
         </Route>
 

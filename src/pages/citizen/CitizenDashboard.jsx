@@ -1,18 +1,19 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import UserNavbar from '../../components/auth/UserNavbar';
 import { useAuth } from '../../context/AuthContext';
 import '../../styles/citizen.css';
 
 export default function CitizenDashboard() {
+  const navigate = useNavigate();
   const { profile, user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
-  const [reportNoticeVisible, setReportNoticeVisible] = useState(false);
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || 'Citizen';
   const displayEmail = profile?.email || user?.email || '';
 
   const handleReportGarbageClick = () => {
-    setReportNoticeVisible(true);
+    navigate('/citizen/report');
   };
 
   return (
@@ -84,22 +85,6 @@ export default function CitizenDashboard() {
 
             <span className="section-badge">Municipal Dispatch Area</span>
           </div>
-
-          {/* Action Notice (shown when user clicks Report Garbage during foundation phase) */}
-          {reportNoticeVisible && (
-            <div className="action-notice-banner" role="status">
-              <span>
-                ℹ️ <strong>Incident Reporting Form:</strong> The GPS geolocation capture, camera photo upload, and 30-meter duplicate detection will be activated in the next step.
-              </span>
-              <button
-                type="button"
-                onClick={() => setReportNoticeVisible(false)}
-                aria-label="Close notification"
-              >
-                ✕
-              </button>
-            </div>
-          )}
         </header>
 
         {/* Summary-Card Placeholders (No fake numbers; shows awaiting live data state) */}
