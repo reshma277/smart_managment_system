@@ -1,122 +1,97 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import ProtectedRoute from './routes/ProtectedRoute';
+import RoleGuard from './routes/RoleGuard';
+import AccountDeactivated from './components/auth/AccountDeactivated';
 
-function App() {
-  const [count, setCount] = useState(0)
+import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import UpdatePassword from './pages/auth/UpdatePassword';
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+import CitizenDashboard from './pages/citizen/CitizenDashboard';
+import WorkerDashboard from './pages/worker/WorkerDashboard';
+import AdminDashboard from './pages/admin/AdminDashboard';
 
-      <div className="ticks"></div>
+import './styles/auth.css';
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+/**
+ * Handles root (/) navigation based on authentication status and user role.
+ * Maintains loading state until both user and role are resolved to prevent race conditions.
+ */
+function RootRedirect() {
+  const { user, role, loading, isDeactivated } = useAuth();
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  // Keep loading active until auth and role are completely resolved
+  const isAuthResolving = loading || (user !== null && role === null);
+
+  if (isAuthResolving) {
+    return (
+      <div className="auth-loading-container" aria-live="polite">
+        <div className="auth-spinner" />
+        <p>Loading application session...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Suspended or deactivated profiles must not be routed to any role dashboard
+  if (isDeactivated || role === 'disabled') {
+    return <AccountDeactivated />;
+  }
+
+  if (role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+  if (role === 'worker') {
+    return <Navigate to="/worker" replace />;
+  }
+  if (role === 'citizen') {
+    return <Navigate to="/citizen" replace />;
+  }
+  return <Navigate to="/login" replace />;
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Root Route with Dynamic Role Redirection */}
+        <Route path="/" element={<RootRedirect />} />
+
+        {/* Public Authentication Routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/update-password" element={<UpdatePassword />} />
+
+        {/* Protected Citizen Routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<RoleGuard allowedRoles={['citizen']} />}>
+            <Route path="/citizen" element={<CitizenDashboard />} />
+          </Route>
+        </Route>
+
+        {/* Protected Field Worker Routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<RoleGuard allowedRoles={['worker']} />}>
+            <Route path="/worker" element={<WorkerDashboard />} />
+          </Route>
+        </Route>
+
+        {/* Protected Municipal Admin Routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<RoleGuard allowedRoles={['admin']} />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+          </Route>
+        </Route>
+
+        {/* Catch-all Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
