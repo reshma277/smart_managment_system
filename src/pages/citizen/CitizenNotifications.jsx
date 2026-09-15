@@ -5,6 +5,24 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import '../../styles/citizen-tracking.css';
 
+const NOTIFICATION_TYPE_CONFIG = {
+  status_update: { label: 'Status Update', icon: '🔄', badgeClass: 'notif-badge-status' },
+  assignment: { label: 'Dispatch Assigned', icon: '👷', badgeClass: 'notif-badge-dispatch' },
+  resolution: { label: 'Cleanup Resolved', icon: '✅', badgeClass: 'notif-badge-resolution' },
+  support_confirmation: { label: 'Support Confirmed', icon: '🤝', badgeClass: 'notif-badge-support' },
+  report_update: { label: 'Report Update', icon: '📋', badgeClass: 'notif-badge-status' },
+};
+
+function getNotificationTypeMeta(type) {
+  return (
+    NOTIFICATION_TYPE_CONFIG[type] || {
+      label: type ? type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Notification',
+      icon: '🔔',
+      badgeClass: '',
+    }
+  );
+}
+
 export default function CitizenNotifications() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -32,18 +50,19 @@ export default function CitizenNotifications() {
       try {
         const { data, error: fetchErr } = await supabase
           .from('notifications')
-          .select('*')
+          .select('id, user_id, report_id, title, message, type, is_read, created_at')
           .eq('user_id', userId)
           .order('created_at', { ascending: false });
 
         if (fetchErr) {
           console.error('Error fetching notifications:', fetchErr);
-          if (isMounted) setError('Unable to load notifications.');
+          if (isMounted) setError('Unable to load notifications. Please try again.');
           return;
         }
 
         if (isMounted) {
           setNotifications(data || []);
+          setError(null);
         }
       } catch (err) {
         console.error('Notifications exception:', err);
@@ -78,9 +97,38 @@ export default function CitizenNotifications() {
     };
   }, [user, refreshKey]);
 
+  // Handle clicking a notification card
+  const handleNotificationClick = async (notif) => {
+    // 1. Mark as read if currently unread
+    if (!notif.is_read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+      );
+
+      try {
+        await supabase.rpc('mark_notification_read', {
+          p_notification_id: notif.id,
+        });
+      } catch (err) {
+        console.error('mark_notification_read exception:', err);
+      }
+    }
+
+    // 2. Navigate to linked report if present
+    if (notif.report_id) {
+      navigate(`/citizen/reports/${notif.report_id}`);
+    }
+  };
+
   // Mark single notification read using existing RPC: mark_notification_read(p_notification_id)
   const handleMarkSingleRead = async (e, notificationId) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent card navigation
+
+    // Optimistic update
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n))
+    );
+
     try {
       const { error: rpcErr } = await supabase.rpc('mark_notification_read', {
         p_notification_id: notificationId,
@@ -88,13 +136,7 @@ export default function CitizenNotifications() {
 
       if (rpcErr) {
         console.error('mark_notification_read error:', rpcErr);
-        return;
       }
-
-      // Optimistic update
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n))
-      );
     } catch (err) {
       console.error('Exception marking notification read:', err);
     }
@@ -102,17 +144,19 @@ export default function CitizenNotifications() {
 
   // Mark all notifications read using existing RPC: mark_all_notifications_read()
   const handleMarkAllRead = async () => {
+    if (markingAll || unreadCount === 0) return;
+
     setMarkingAll(true);
+
+    // Optimistic update
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+
     try {
       const { error: rpcErr } = await supabase.rpc('mark_all_notifications_read');
 
       if (rpcErr) {
         console.error('mark_all_notifications_read error:', rpcErr);
-        return;
       }
-
-      // Optimistic update
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     } catch (err) {
       console.error('Exception marking all read:', err);
     } finally {
@@ -135,39 +179,60 @@ export default function CitizenNotifications() {
         {/* Header */}
         <header className="tracking-header">
           <div className="tracking-header-text">
+            <nav className="details-breadcrumb-nav" aria-label="Breadcrumb" style={{ marginBottom: '0.5rem' }}>
+              <Link to="/citizen" className="btn-back-crumb">
+                &larr; Dashboard
+              </Link>
+            </nav>
             <h1>Citizen Notification Center</h1>
-            <p>Real-time progress alerts, dispatch status changes, and cleanup completions</p>
+            <p>Real-time progress alerts, dispatch status changes, and cleanup completions.</p>
           </div>
 
-          {unreadCount > 0 && (
+          <div className="tracking-actions-bar">
+            <Link
+              to="/citizen"
+              className="btn-form-cancel"
+              style={{ padding: '0.5rem 0.9rem', fontSize: '0.85rem', textDecoration: 'none' }}
+            >
+              Dashboard
+            </Link>
+
             <button
               type="button"
               className="btn-mark-all-read"
               onClick={handleMarkAllRead}
-              disabled={markingAll}
+              disabled={markingAll || unreadCount === 0}
+              title={unreadCount === 0 ? 'No unread notifications' : 'Mark all notifications as read'}
             >
+              <span aria-hidden="true">✓✓</span>
               {markingAll ? 'Updating...' : `Mark All Read (${unreadCount})`}
             </button>
-          )}
+          </div>
         </header>
 
         {/* Tab Filters */}
-        <nav className="filter-nav-bar" aria-label="Notification view filters">
-          <button
-            type="button"
-            className={`filter-pill-btn ${activeTab === 'all' ? 'active' : ''}`}
-            onClick={() => setActiveTab('all')}
-          >
-            All Alerts ({notifications.length})
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${activeTab === 'unread' ? 'active' : ''}`}
-            onClick={() => setActiveTab('unread')}
-          >
-            Unread Only ({unreadCount})
-          </button>
-        </nav>
+        <div className="tracking-filter-bar">
+          <div className="filter-pills" role="tablist" aria-label="Filter notifications">
+            <button
+              type="button"
+              role="tab"
+              className={`filter-pill-btn ${activeTab === 'all' ? 'active' : ''}`}
+              onClick={() => setActiveTab('all')}
+              aria-selected={activeTab === 'all'}
+            >
+              All Alerts <span className="filter-pill-count">{notifications.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`filter-pill-btn ${activeTab === 'unread' ? 'active' : ''}`}
+              onClick={() => setActiveTab('unread')}
+              aria-selected={activeTab === 'unread'}
+            >
+              Unread Only <span className="filter-pill-count">{unreadCount}</span>
+            </button>
+          </div>
+        </div>
 
         {/* Loading State */}
         {loading && (
@@ -200,7 +265,7 @@ export default function CitizenNotifications() {
             <span className="state-icon" aria-hidden="true">🔔</span>
             <h2 className="state-title">No Notifications Yet</h2>
             <p className="state-desc">
-              You will receive automatic alerts here when your filed reports are picked up, assigned to municipal workers, or marked as resolved.
+              You will receive automatic alerts here when your filed reports are assigned to municipal workers, scheduled for collection, or marked as resolved.
             </p>
             <button
               type="button"
@@ -232,6 +297,7 @@ export default function CitizenNotifications() {
         {!loading && !error && displayedNotifications.length > 0 && (
           <div className="notifications-list" role="feed" aria-label="Notifications list">
             {displayedNotifications.map((notif) => {
+              const typeMeta = getNotificationTypeMeta(notif.type);
               const notifDate = new Date(notif.created_at).toLocaleString(undefined, {
                 month: 'short',
                 day: 'numeric',
@@ -243,47 +309,72 @@ export default function CitizenNotifications() {
               return (
                 <div
                   key={notif.id}
-                  className={`notification-card ${!notif.is_read ? 'unread' : 'read'}`}
-                  role="article"
+                  className={`notification-card ${!notif.is_read ? 'unread' : 'read'} ${notif.report_id ? 'clickable' : ''}`}
+                  onClick={() => handleNotificationClick(notif)}
+                  role={notif.report_id ? 'button' : 'article'}
+                  tabIndex={0}
                   aria-label={`${notif.title}: ${notif.message}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleNotificationClick(notif);
+                    }
+                  }}
                 >
-                  {!notif.is_read && (
-                    <div className="notification-unread-dot" title="Unread alert" />
-                  )}
+                  <div className="notif-icon-col">
+                    {!notif.is_read ? (
+                      <span className="notification-unread-dot" title="Unread alert" />
+                    ) : (
+                      <span className="notification-read-icon" aria-hidden="true">
+                        {typeMeta.icon}
+                      </span>
+                    )}
+                  </div>
 
                   <div className="notification-content">
+                    <div className="notification-header-row">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span className={`notif-type-badge ${typeMeta.badgeClass}`}>
+                          <span aria-hidden="true">{typeMeta.icon}</span> {typeMeta.label}
+                        </span>
+                        {notif.report_id && (
+                          <span className="report-card-ref-badge" title={`Linked Incident Reference: ${notif.report_id}`}>
+                            Incident #{notif.report_id.slice(0, 8)}
+                          </span>
+                        )}
+                      </div>
+
+                      <time className="notification-date-text" dateTime={notif.created_at}>
+                        {notifDate}
+                      </time>
+                    </div>
+
                     <h2 className="notification-card-title">{notif.title}</h2>
                     <p className="notification-card-msg">{notif.message}</p>
 
                     <div className="notification-card-footer">
-                      <time dateTime={notif.created_at}>{notifDate}</time>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        {notif.report_id && (
-                          <Link
-                            to={`/citizen/reports/${notif.report_id}`}
-                            className="report-card-link-text"
-                            onClick={(e) => {
-                              if (!notif.is_read) {
-                                handleMarkSingleRead(e, notif.id);
-                              }
-                            }}
-                          >
-                            View Linked Report &rarr;
-                          </Link>
-                        )}
-
-                        {!notif.is_read && (
-                          <button
-                            type="button"
-                            className="btn-mark-read"
-                            onClick={(e) => handleMarkSingleRead(e, notif.id)}
-                            aria-label="Mark notification as read"
-                          >
-                            Mark Read
-                          </button>
+                      <div>
+                        {notif.report_id ? (
+                          <span className="report-card-link-text">
+                            View Linked Incident &rarr;
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text)', opacity: 0.8 }}>
+                            System Alert
+                          </span>
                         )}
                       </div>
+
+                      {!notif.is_read && (
+                        <button
+                          type="button"
+                          className="btn-mark-read"
+                          onClick={(e) => handleMarkSingleRead(e, notif.id)}
+                          aria-label="Mark notification as read"
+                        >
+                          Mark Read
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

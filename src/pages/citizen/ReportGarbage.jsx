@@ -7,14 +7,16 @@ import { supabase } from '../../lib/supabase';
 import '../../styles/report-garbage.css';
 
 const GARBAGE_TYPES = [
-  { value: 'household', label: 'Household Waste' },
-  { value: 'commercial', label: 'Commercial Waste' },
-  { value: 'construction', label: 'Construction / Debris' },
-  { value: 'organic', label: 'Organic / Food Waste' },
-  { value: 'plastic', label: 'Plastic / Recyclable Packaging' },
-  { value: 'electronic', label: 'Electronic Waste (E-waste)' },
-  { value: 'hazardous', label: 'Hazardous / Chemical / Biohazard' },
-  { value: 'other', label: 'Other / Mixed Waste' },
+  { value: 'plastic', dbType: 'plastic', label: 'Plastic (Bottles, packaging, bags)' },
+  { value: 'glass', dbType: 'general', label: 'Glass (Bottles, jars, broken glass)' },
+  { value: 'can', dbType: 'general', label: 'Can (Aluminum cans, tin, metal)' },
+  { value: 'trash', dbType: 'general', label: 'Trash / General Waste' },
+  { value: 'organic', dbType: 'organic', label: 'Organic / Food Waste' },
+  { value: 'hazardous', dbType: 'hazardous', label: 'Hazardous / Chemical / Biohazard' },
+  { value: 'electronic', dbType: 'electronic', label: 'Electronic Waste (E-waste)' },
+  { value: 'construction', dbType: 'construction', label: 'Construction / Debris' },
+  { value: 'bulk', dbType: 'bulk', label: 'Bulk / Large Items / Furniture' },
+  { value: 'other', dbType: 'general', label: 'Other / Mixed Waste' },
 ];
 
 const SEVERITY_LEVELS = [
@@ -31,20 +33,22 @@ export default function ReportGarbage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // Form field states
+  // Form fields
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [garbageType, setGarbageType] = useState('');
   const [severity, setSeverity] = useState('');
+  const [address, setAddress] = useState('');
+
+  // Photo state
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
-
-  // Photo upload states (Step 4)
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoUploadSuccess, setPhotoUploadSuccess] = useState(false);
   const [uploadedPhotoPath, setUploadedPhotoPath] = useState(null);
+  const [photoError, setPhotoError] = useState('');
 
-  // Location states (Step 3) - null initially per requirements
+  // Location states
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
   const [locationStatus, setLocationStatus] = useState('idle');
@@ -52,18 +56,21 @@ export default function ReportGarbage() {
 
   // Validation & workflow states
   const [validationErrors, setValidationErrors] = useState({});
-  const [photoError, setPhotoError] = useState('');
-  const [isFormReady, setIsFormReady] = useState(false);
-
-  // Duplicate detection states (Step 5)
   const [duplicateChecking, setDuplicateChecking] = useState(false);
   const [duplicateResult, setDuplicateResult] = useState(null);
-  const [noDuplicateFound, setNoDuplicateFound] = useState(false);
   const [duplicateError, setDuplicateError] = useState('');
-  const [selectedDuplicateId, setSelectedDuplicateId] = useState(null);
-  const [duplicateConfirmedSame, setDuplicateConfirmedSame] = useState(false);
 
-  // Clean up object URLs when photo changes or component unmounts
+  // Support duplicate action states
+  const [supportingReport, setSupportingReport] = useState(false);
+  const [supportSuccess, setSupportSuccess] = useState(false);
+  const [supportError, setSupportError] = useState('');
+
+  // Submission states
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
+  const [submissionResult, setSubmissionResult] = useState(null);
+
+  // Clean up object URLs when preview changes or component unmounts
   useEffect(() => {
     return () => {
       if (photoPreviewUrl) {
@@ -72,21 +79,21 @@ export default function ReportGarbage() {
     };
   }, [photoPreviewUrl]);
 
-  // Track if user has modified any field
+  // Track unsaved modifications
   const isDirty = Boolean(
     title.trim() ||
     description.trim() ||
     garbageType ||
     severity ||
+    address.trim() ||
     selectedPhoto ||
     uploadedPhotoPath ||
     latitude !== null ||
-    longitude !== null ||
-    selectedDuplicateId !== null
+    longitude !== null
   );
 
   const handleBack = () => {
-    if (isDirty && !isFormReady) {
+    if (isDirty && !submissionResult) {
       const confirmLeave = window.confirm(
         'You have unsaved form details. Are you sure you want to discard this report and return to the dashboard?'
       );
@@ -96,8 +103,8 @@ export default function ReportGarbage() {
   };
 
   /**
-   * Uploads the selected photo to the private report-photos bucket.
-   * Path format: report-photos/{authenticated-user-id}/{unique-file-name}
+   * Uploads photo to the private report-photos bucket.
+   * Canonical path prefix required by RLS: report-photos/{auth.uid()}/*
    */
   const uploadPhotoToStorage = async (file) => {
     if (!user?.id) {
@@ -109,7 +116,7 @@ export default function ReportGarbage() {
     setPhotoUploadSuccess(false);
     setPhotoError('');
 
-    // Clean up previous temporary uploaded photo if citizen replaces image
+    // Remove previous upload if user replaces image
     if (uploadedPhotoPath) {
       try {
         await supabase.storage.from('report-photos').remove([uploadedPhotoPath]);
@@ -155,16 +162,13 @@ export default function ReportGarbage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Reset file input so identical file can be re-selected if desired
     e.target.value = '';
 
-    // Validate MIME type (JPEG, PNG, WebP only)
     if (!ALLOWED_PHOTO_MIMES.includes(file.type)) {
       setPhotoError('Unsupported format. Only JPEG, PNG, and WebP images are permitted.');
       return;
     }
 
-    // Validate file size (max 5 MB)
     if (file.size > MAX_PHOTO_BYTES) {
       setPhotoError(`Photo exceeds 5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select an image under 5 MB.`);
       return;
@@ -177,12 +181,10 @@ export default function ReportGarbage() {
     setSelectedPhoto(file);
     setPhotoPreviewUrl(URL.createObjectURL(file));
 
-    // Clear any previous photo validation error
     if (validationErrors.photo) {
       setValidationErrors((prev) => ({ ...prev, photo: undefined }));
     }
 
-    // Trigger storage upload
     await uploadPhotoToStorage(file);
   };
 
@@ -248,7 +250,7 @@ export default function ReportGarbage() {
     }
 
     if (photoUploading) {
-      errors.photo = 'Photo is currently uploading. Please wait for the upload to complete before validating.';
+      errors.photo = 'Photo is currently uploading. Please wait for upload to finish before submitting.';
     }
 
     setValidationErrors(errors);
@@ -256,19 +258,13 @@ export default function ReportGarbage() {
   };
 
   /**
-   * Runs duplicate detection via check_duplicate_report RPC.
-   * Proximity evaluation is performed at exactly 30 meters on the database.
+   * Checks for duplicate reports within 30 meters via check_duplicate_report RPC.
    */
-  const runDuplicateCheck = async () => {
-    if (duplicateChecking) return;
-    if (latitude === null || longitude === null) return;
+  const checkForDuplicates = async () => {
+    if (latitude === null || longitude === null) return null;
 
     setDuplicateChecking(true);
     setDuplicateError('');
-    setDuplicateResult(null);
-    setNoDuplicateFound(false);
-    setSelectedDuplicateId(null);
-    setDuplicateConfirmedSame(false);
 
     try {
       const { data, error: rpcErr } = await supabase.rpc('check_duplicate_report', {
@@ -277,14 +273,12 @@ export default function ReportGarbage() {
       });
 
       if (rpcErr) {
-        console.error('Duplicate detection RPC error:', rpcErr);
-        setDuplicateError('Unable to check for nearby reports right now. Please verify your connection and try again.');
-        setDuplicateChecking(false);
-        return;
+        console.error('check_duplicate_report RPC error:', rpcErr);
+        setDuplicateError('Unable to verify nearby reports right now.');
+        return null;
       }
 
       const row = Array.isArray(data) ? data[0] : data;
-
       if (row?.is_duplicate && row?.existing_report_id) {
         let extraTitle = null;
         let extraType = null;
@@ -301,64 +295,154 @@ export default function ReportGarbage() {
             extraType = repData.garbage_type;
           }
         } catch (repErr) {
-          console.warn('Could not fetch additional duplicate report details:', repErr);
+          console.warn('Could not fetch extra duplicate details:', repErr);
         }
 
-        setDuplicateResult({
+        const result = {
           id: row.existing_report_id,
           status: row.existing_status,
           distance: row.distance_meters,
           supportersCount: row.supporters_count,
           title: extraTitle,
           garbageType: extraType,
-        });
-        setNoDuplicateFound(false);
-        setIsFormReady(false);
-      } else {
-        setDuplicateResult(null);
-        setNoDuplicateFound(true);
-        setIsFormReady(true);
+        };
+        setDuplicateResult(result);
+        return result;
       }
+
+      setDuplicateResult(null);
+      return null;
     } catch (err) {
       console.error('Duplicate detection exception:', err);
-      setDuplicateError('Network error while checking for nearby reports. Please try again.');
+      setDuplicateError('Network error while checking for nearby reports.');
+      return null;
     } finally {
       setDuplicateChecking(false);
     }
   };
 
-  const handleConfirmSameReport = () => {
+  /**
+   * Supports an existing nearby report via support_existing_report RPC.
+   */
+  const handleSupportExistingReport = async () => {
     if (!duplicateResult?.id) return;
-    setSelectedDuplicateId(duplicateResult.id);
-    setDuplicateConfirmedSame(true);
+
+    setSupportingReport(true);
+    setSupportError('');
+
+    try {
+      const { data, error: supErr } = await supabase.rpc('support_existing_report', {
+        p_report_id: duplicateResult.id,
+      });
+
+      if (supErr || data?.success === false) {
+        setSupportError(data?.message || 'Could not support this report. Please try again.');
+      } else {
+        setSupportSuccess(true);
+      }
+    } catch (err) {
+      console.error('Support report exception:', err);
+      setSupportError('Network error while supporting report.');
+    } finally {
+      setSupportingReport(false);
+    }
   };
 
-  const handleConfirmDifferentReport = () => {
-    setSelectedDuplicateId(null);
-    setDuplicateConfirmedSame(false);
-    setDuplicateResult(null);
-    setNoDuplicateFound(true);
-    setIsFormReady(true);
+  /**
+   * Executes atomic submission via submit_garbage_report RPC.
+   */
+  const executeSubmission = async () => {
+    setSubmitting(true);
+    setSubmissionError('');
+
+    const selectedConfig = GARBAGE_TYPES.find((t) => t.value === garbageType);
+    const dbGarbageType = selectedConfig?.dbType || 'general';
+
+    // Format address text or fallback to coordinates string
+    const finalAddress = address.trim() || `Incident Location (${latitude.toFixed(5)}°, ${longitude.toFixed(5)}°)`;
+
+    // Append custom category note for glass/can if mapped to general
+    let finalDesc = description.trim();
+    if (['glass', 'can'].includes(garbageType)) {
+      finalDesc = `[Category: ${selectedConfig?.label?.split(' ')?.[0] || garbageType}] ${finalDesc}`;
+    }
+
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('submit_garbage_report', {
+        p_title: title.trim(),
+        p_description: finalDesc,
+        p_garbage_type: dbGarbageType,
+        p_severity: severity,
+        p_latitude: latitude,
+        p_longitude: longitude,
+        p_address: finalAddress,
+        p_photo_url: uploadedPhotoPath || null,
+      });
+
+      if (rpcErr) {
+        console.error('submit_garbage_report RPC error:', rpcErr);
+        setSubmissionError('Database error occurred while submitting your report. Please try again.');
+        return;
+      }
+
+      if (data?.success === false) {
+        if (data.code === 'DUPLICATE_REPORT') {
+          // Backend caught duplicate at submit time
+          setDuplicateResult({
+            id: data.existing_report_id,
+            status: data.existing_status,
+            distance: data.distance_meters,
+            supportersCount: data.supporters_count,
+            title: null,
+            garbageType: null,
+          });
+          setSubmissionError('An active report already exists within 30 meters of this spot. You can support the existing report below or adjust your location pin.');
+        } else {
+          setSubmissionError(data.message || 'Submission failed. Please check your details and try again.');
+        }
+        return;
+      }
+
+      // Success
+      setSubmissionResult({
+        reportId: data.report_id,
+        status: data.status || 'Reported',
+        assignedWorkerId: data.assigned_worker_id,
+      });
+    } catch (err) {
+      console.error('Report submission exception:', err);
+      setSubmissionError('Network error while transmitting report. Please check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  /**
+   * Initial submit handler: validates form, checks duplicates, and proceeds if clear.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmissionError('');
 
     const isValid = validateForm();
-    if (!isValid) {
-      setIsFormReady(false);
+    if (!isValid) return;
+
+    // Check duplicate
+    const duplicate = await checkForDuplicates();
+    if (duplicate) {
+      // Duplicate found: show warning and allow citizen to choose support or proceed
       return;
     }
 
-    // Step 5: Run duplicate detection before final report submission
-    await runDuplicateCheck();
+    await executeSubmission();
   };
 
-  const handleResetForEdit = () => {
-    setIsFormReady(false);
+  /**
+   * Citizen chooses to proceed with their own report despite nearby duplicate.
+   */
+  const handleProceedWithSubmission = async () => {
     setDuplicateResult(null);
-    setDuplicateConfirmedSame(false);
-    setSelectedDuplicateId(null);
+    await executeSubmission();
   };
 
   return (
@@ -367,7 +451,7 @@ export default function ReportGarbage() {
       <UserNavbar />
 
       <main className="report-garbage-container" role="main">
-        {/* Navigation & Header */}
+        {/* Navigation Header */}
         <div className="report-nav-header">
           <button
             type="button"
@@ -375,38 +459,46 @@ export default function ReportGarbage() {
             onClick={handleBack}
             aria-label="Return to Citizen Dashboard"
           >
-            <span aria-hidden="true">←</span> Back to Dashboard
+            <span aria-hidden="true">&larr;</span> Back to Dashboard
           </button>
         </div>
 
+        {/* Page Header */}
         <header className="report-page-header">
           <div className="report-header-badge-row">
             <span className="report-header-badge">Citizen Incident Filing</span>
           </div>
-          <h1>Report Garbage</h1>
+          <h1>Report Garbage Incident</h1>
           <p>
-            Report an uncollected or hazardous garbage accumulation. Provide incident details below so the municipal dispatch team can prioritize and schedule cleanup.
+            Report uncollected or hazardous waste accumulation. Provide incident details below so the municipal dispatch team can prioritize and schedule field cleanup.
           </p>
         </header>
 
-        {/* Temporary Informational Ready State (Shown only after client validation succeeds) */}
-        {isFormReady ? (
+        {/* 8. Success State View */}
+        {submissionResult ? (
           <section className="report-ready-card" aria-live="polite">
             <div className="ready-card-icon" aria-hidden="true">
-              ✅
+              🎉
             </div>
-            <h2>Form Validated &amp; Ready</h2>
+            <h2>Report Submitted Successfully!</h2>
             <div className="ready-status-alert" role="status">
-              <strong>Step 5 Duplicate Detection Completed:</strong> {noDuplicateFound ? 'No nearby duplicate report found. ' : ''}Form details, 30-meter proximity verification, pin coordinates, and photo storage path (report-photos/{user?.id || 'citizen'}/...) are validated. Live report submission will be connected in the next step.
+              Your report has been received by municipal dispatch and is now in <strong>{submissionResult.status}</strong> status.
+              {submissionResult.assignedWorkerId ? ' An available cleanup worker has been auto-assigned.' : ' It will be assigned to a field crew shortly.'}
             </div>
 
             <div className="report-ready-summary">
+              <div className="summary-row">
+                <span className="summary-row-label">Report ID:</span>
+                <span className="summary-row-value" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                  {submissionResult.reportId}
+                </span>
+              </div>
               <div className="summary-row">
                 <span className="summary-row-label">Title:</span>
                 <span className="summary-row-value">{title}</span>
               </div>
               <div className="summary-row">
-                <span className="summary-row-label">Garbage Type:</span>
+                <span className="summary-row-label">Category:</span>
                 <span className="summary-row-value">
                   {GARBAGE_TYPES.find((t) => t.value === garbageType)?.label || garbageType}
                 </span>
@@ -418,67 +510,61 @@ export default function ReportGarbage() {
                 </span>
               </div>
               <div className="summary-row">
-                <span className="summary-row-label">Photo:</span>
-                <span className="summary-row-value">
-                  {uploadedPhotoPath ? (
-                    <>
-                      <span style={{ color: '#059669', fontWeight: 600 }}>✓ Uploaded</span> (report-photos/{uploadedPhotoPath})
-                    </>
-                  ) : selectedPhoto ? (
-                    `${selectedPhoto.name} (Upload pending)`
-                  ) : (
-                    'None attached'
-                  )}
-                </span>
-              </div>
-              <div className="summary-row">
                 <span className="summary-row-label">Location:</span>
                 <span className="summary-row-value">
-                  {latitude !== null && longitude !== null
-                    ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-                    : 'Location not selected'}
+                  {address.trim() || `${latitude?.toFixed(5)}°, ${longitude?.toFixed(5)}°`}
                 </span>
               </div>
-              <div className="summary-row">
-                <span className="summary-row-label">Duplicate Check:</span>
-                <span className="summary-row-value" style={{ color: '#059669', fontWeight: 600 }}>
-                  ✓ No nearby duplicate report found within 30m
-                </span>
-              </div>
+              {uploadedPhotoPath && (
+                <div className="summary-row">
+                  <span className="summary-row-label">Photo Evidence:</span>
+                  <span className="summary-row-value" style={{ color: '#059669', fontWeight: 600 }}>
+                    &check; Attached
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="ready-actions-row">
               <button
                 type="button"
-                className="btn-form-cancel"
-                onClick={handleResetForEdit}
+                className="btn-form-submit"
+                onClick={() => navigate(`/citizen/reports/${submissionResult.reportId}`)}
               >
-                Edit Report Details
+                <span>View Report Details</span>
+                <span aria-hidden="true">&rarr;</span>
               </button>
               <button
                 type="button"
-                className="btn-form-submit"
+                className="btn-form-cancel"
+                onClick={() => navigate('/citizen/reports')}
+              >
+                Go to My Reports
+              </button>
+              <button
+                type="button"
+                className="btn-form-cancel"
                 onClick={() => navigate('/citizen')}
               >
-                Return to Dashboard
+                Back to Dashboard
               </button>
             </div>
           </section>
         ) : (
-          /* Report Garbage Form */
+          /* Main Report Garbage Form */
           <form
             onSubmit={handleSubmit}
             className="report-form-card"
             noValidate
             aria-label="Report garbage incident form"
           >
-            {/* Duplicate Detection Confirmation Card (Step 5) */}
+            {/* 4. Duplicate Detection Warning Banner & Action Card */}
             {duplicateResult && (
               <section className="duplicate-alert-card" aria-live="polite">
                 <div className="duplicate-card-header">
                   <span className="duplicate-icon" aria-hidden="true">📍</span>
                   <div>
-                    <h3>Nearby Report Detected</h3>
+                    <h3>Nearby Incident Detected</h3>
                     <p>An active report was found within 30 meters of your selected incident location.</p>
                   </div>
                 </div>
@@ -486,16 +572,14 @@ export default function ReportGarbage() {
                 <div className="duplicate-info-box">
                   {duplicateResult.title && (
                     <div className="duplicate-info-row">
-                      <span className="dup-label">Report Title:</span>
+                      <span className="dup-label">Existing Report:</span>
                       <span className="dup-value"><strong>{duplicateResult.title}</strong></span>
                     </div>
                   )}
                   {duplicateResult.garbageType && (
                     <div className="duplicate-info-row">
                       <span className="dup-label">Garbage Type:</span>
-                      <span className="dup-value">
-                        {GARBAGE_TYPES.find((t) => t.value === duplicateResult.garbageType)?.label || duplicateResult.garbageType}
-                      </span>
+                      <span className="dup-value">{duplicateResult.garbageType}</span>
                     </div>
                   )}
                   <div className="duplicate-info-row">
@@ -504,40 +588,36 @@ export default function ReportGarbage() {
                   </div>
                   {duplicateResult.distance !== null && duplicateResult.distance !== undefined && (
                     <div className="duplicate-info-row">
-                      <span className="dup-label">Approximate Distance:</span>
+                      <span className="dup-label">Proximity:</span>
                       <span className="dup-value">~{Math.round(duplicateResult.distance)} meters away</span>
                     </div>
                   )}
                   <div className="duplicate-info-row">
-                    <span className="dup-label">Supporters:</span>
-                    <span className="dup-value">{duplicateResult.supportersCount || 0} citizen{duplicateResult.supportersCount === 1 ? '' : 's'}</span>
+                    <span className="dup-label">Citizens Supporting:</span>
+                    <span className="dup-value">
+                      {duplicateResult.supportersCount || 0} citizen{duplicateResult.supportersCount === 1 ? '' : 's'}
+                    </span>
                   </div>
                 </div>
 
-                {duplicateConfirmedSame ? (
+                {supportSuccess ? (
                   <div className="duplicate-same-confirmed" role="status">
                     <p>
-                      <strong>Existing report selected. Support action will be connected in the next step.</strong>{' '}
-                      {selectedDuplicateId && (
-                        <span style={{ opacity: 0.85, fontSize: '0.85rem' }}>
-                          (Report ID: {selectedDuplicateId})
-                        </span>
-                      )}
+                      <strong>✅ You are now supporting and tracking this report!</strong>
+                      <br />
+                      You will receive notifications as municipal teams update and resolve this incident.
                     </p>
-                    <div className="ready-actions-row" style={{ marginTop: '0.85rem' }}>
-                      <button
-                        type="button"
-                        className="btn-form-cancel"
-                        onClick={() => {
-                          setDuplicateConfirmedSame(false);
-                          setSelectedDuplicateId(null);
-                        }}
-                      >
-                        Change Selection
-                      </button>
+                    <div className="ready-actions-row" style={{ marginTop: '1rem' }}>
                       <button
                         type="button"
                         className="btn-form-submit"
+                        onClick={() => navigate(`/citizen/reports/${duplicateResult.id}`)}
+                      >
+                        View Supported Report &rarr;
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-form-cancel"
                         onClick={() => navigate('/citizen')}
                       >
                         Return to Dashboard
@@ -546,29 +626,47 @@ export default function ReportGarbage() {
                   </div>
                 ) : (
                   <div className="duplicate-actions-box">
-                    <p className="duplicate-question">Is this the same garbage accumulation you are reporting?</p>
+                    <p className="duplicate-question">
+                      Is this the same incident you are reporting? You can support the existing report to help prioritize dispatch, or continue submitting your own.
+                    </p>
+
+                    {supportError && (
+                      <p style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '0.75rem' }} role="alert">
+                        ⚠️ {supportError}
+                      </p>
+                    )}
+
                     <div className="duplicate-buttons-row">
                       <button
                         type="button"
-                        id="btn-duplicate-same"
                         className="btn-duplicate-action btn-duplicate-yes"
-                        onClick={handleConfirmSameReport}
+                        onClick={handleSupportExistingReport}
+                        disabled={supportingReport || submitting}
                       >
-                        Yes, this is the same issue
+                        {supportingReport ? 'Supporting...' : '👍 Support Existing Report (+1)'}
                       </button>
                       <button
                         type="button"
-                        id="btn-duplicate-no"
                         className="btn-duplicate-action btn-duplicate-no"
-                        onClick={handleConfirmDifferentReport}
+                        onClick={handleProceedWithSubmission}
+                        disabled={supportingReport || submitting}
                       >
-                        No, create a new report
+                        {submitting ? 'Submitting...' : 'Continue Submitting My Report →'}
                       </button>
                     </div>
                   </div>
                 )}
               </section>
             )}
+
+            {/* Submission Error Banner */}
+            {submissionError && (
+              <div className="location-error-alert" role="alert" style={{ marginBottom: '1.25rem' }}>
+                <span className="alert-icon" aria-hidden="true">⚠️</span>
+                <p>{submissionError}</p>
+              </div>
+            )}
+
             {/* Fieldset: Incident Details */}
             <fieldset className="form-fieldset">
               <legend className="fieldset-legend">
@@ -585,7 +683,7 @@ export default function ReportGarbage() {
                   id="report-title"
                   type="text"
                   className="form-input-text"
-                  placeholder="e.g., Overflowing dumpster behind market"
+                  placeholder="e.g., Overflowing dumpster behind grocery store"
                   maxLength={100}
                   value={title}
                   onChange={(e) => {
@@ -599,7 +697,7 @@ export default function ReportGarbage() {
                   aria-describedby={validationErrors.title ? 'report-title-error' : 'report-title-hint'}
                 />
                 <span id="report-title-hint" className="form-field-hint">
-                  Provide a concise, descriptive summary of the incident (5–100 characters).
+                  Provide a concise, descriptive title (5–100 characters).
                 </span>
                 {validationErrors.title && (
                   <span id="report-title-error" className="field-error-message" role="alert">
@@ -662,7 +760,7 @@ export default function ReportGarbage() {
                     aria-invalid={Boolean(validationErrors.severity)}
                     aria-describedby={validationErrors.severity ? 'severity-error' : undefined}
                   >
-                    <option value="">-- Select severity --</option>
+                    <option value="">-- Select severity level --</option>
                     {SEVERITY_LEVELS.map((level) => (
                       <option key={level.value} value={level.value}>
                         {level.label}
@@ -687,7 +785,7 @@ export default function ReportGarbage() {
                   id="report-description"
                   className="form-textarea"
                   rows={4}
-                  placeholder="Describe the waste situation, landmarks, odor, or safety concerns (min 10 characters)..."
+                  placeholder="Describe the waste situation, landmarks, smell, or safety hazards (min 10 characters)..."
                   maxLength={1000}
                   value={description}
                   onChange={(e) => {
@@ -701,7 +799,7 @@ export default function ReportGarbage() {
                   aria-describedby={validationErrors.description ? 'report-desc-error' : 'report-desc-hint'}
                 />
                 <span id="report-desc-hint" className="form-field-hint">
-                  Include relevant details such as approximate volume, blockages, or nearby landmarks.
+                  Include relevant details such as approximate volume, blockages, or odor intensity.
                 </span>
                 {validationErrors.description && (
                   <span id="report-desc-error" className="field-error-message" role="alert">
@@ -724,11 +822,8 @@ export default function ReportGarbage() {
                   setLatitude(lat);
                   setLongitude(lng);
                   setDuplicateResult(null);
-                  setNoDuplicateFound(false);
                   setDuplicateError('');
-                  setSelectedDuplicateId(null);
-                  setDuplicateConfirmedSame(false);
-                  setIsFormReady(false);
+                  setSubmissionError('');
                   if (validationErrors.location) {
                     setValidationErrors((prev) => ({ ...prev, location: undefined }));
                   }
@@ -740,10 +835,29 @@ export default function ReportGarbage() {
               />
 
               {validationErrors.location && (
-                <span id="location-error" className="field-error-message" role="alert" style={{ marginTop: '0.25rem' }}>
+                <span id="location-error" className="field-error-message" role="alert" style={{ marginTop: '0.5rem' }}>
                   <span aria-hidden="true">⚠️</span> {validationErrors.location}
                 </span>
               )}
+
+              {/* Location / Landmark Details Input */}
+              <div className="form-field-group" style={{ marginTop: '1rem' }}>
+                <label htmlFor="report-address">
+                  <span>Location / Street Address / Landmark</span>
+                </label>
+                <input
+                  id="report-address"
+                  type="text"
+                  className="form-input-text"
+                  placeholder="e.g., Near Bus Terminal 4, behind Sunrise Supermarket"
+                  maxLength={200}
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                />
+                <span className="form-field-hint">
+                  Specify street address or landmarks to help field workers locate the waste. If left blank, GPS coordinates will be used.
+                </span>
+              </div>
             </fieldset>
 
             {/* Fieldset: Photo Evidence */}
@@ -779,7 +893,7 @@ export default function ReportGarbage() {
                         )}
                         {photoUploadSuccess && (
                           <span className="photo-status-tag success">
-                            <span aria-hidden="true">✓</span> Stored in report-photos/{uploadedPhotoPath}
+                            <span aria-hidden="true">&check;</span> Uploaded securely
                           </span>
                         )}
                         {photoError && (
@@ -820,12 +934,12 @@ export default function ReportGarbage() {
                       accept="image/jpeg,image/png,image/webp"
                       className="photo-file-input"
                       onChange={handlePhotoSelect}
-                      aria-label="Select photo of garbage incident (optional)"
+                      aria-label="Select photo of garbage incident"
                       aria-describedby={photoError ? 'photo-error-msg' : 'photo-hint-msg'}
                     />
                     <div className="dropzone-inner">
                       <span className="dropzone-icon" aria-hidden="true">📸</span>
-                      <p className="dropzone-title">Click or tap to choose a photo</p>
+                      <p className="dropzone-title">Click or tap to upload a photo</p>
                       <p id="photo-hint-msg" className="dropzone-hint">
                         JPEG, PNG, or WebP up to 5 MB. Automatically uploaded to private municipal storage.
                       </p>
@@ -847,24 +961,17 @@ export default function ReportGarbage() {
               </div>
             </fieldset>
 
-            {/* Duplicate Checking and Error Banners */}
+            {/* Duplicate Checking Indicator */}
             {duplicateChecking && (
               <div className="duplicate-checking-banner" role="status">
                 <span className="status-spinner" aria-hidden="true" />
-                <span>Checking for nearby reports...</span>
+                <span>Checking for nearby reports within 30 meters...</span>
               </div>
             )}
 
             {duplicateError && (
               <div className="duplicate-error-banner" role="alert">
                 <span>⚠️ {duplicateError}</span>
-                <button
-                  type="button"
-                  onClick={runDuplicateCheck}
-                  className="btn-retry-check"
-                >
-                  Retry Check
-                </button>
               </div>
             )}
 
@@ -874,22 +981,25 @@ export default function ReportGarbage() {
                 type="button"
                 className="btn-form-cancel"
                 onClick={handleBack}
+                disabled={submitting || photoUploading || duplicateChecking}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 className="btn-form-submit"
-                disabled={photoUploading || duplicateChecking}
+                disabled={submitting || photoUploading || duplicateChecking || supportingReport}
               >
                 <span>
-                  {duplicateChecking
-                    ? 'Checking for nearby reports...'
+                  {submitting
+                    ? 'Submitting Report...'
+                    : duplicateChecking
+                    ? 'Verifying Location...'
                     : photoUploading
                     ? 'Uploading Photo...'
-                    : 'Review & Validate Form'}
+                    : 'Submit Garbage Report'}
                 </span>
-                <span aria-hidden="true">→</span>
+                <span aria-hidden="true">&rarr;</span>
               </button>
             </div>
           </form>

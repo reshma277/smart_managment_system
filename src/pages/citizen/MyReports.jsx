@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import UserNavbar from '../../components/auth/UserNavbar';
 import ReportStatusBadge from '../../components/citizen/ReportStatusBadge';
 import { useAuth } from '../../context/AuthContext';
@@ -17,6 +17,16 @@ const GARBAGE_TYPE_LABELS = {
   hazardous: 'Hazardous / Biohazard',
   other: 'Other / Mixed Waste',
 };
+
+const STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'Reported', label: 'Reported' },
+  { key: 'Assigned', label: 'Assigned' },
+  { key: 'Accepted', label: 'Accepted' },
+  { key: 'In Progress', label: 'In Progress' },
+  { key: 'Resolved', label: 'Resolved' },
+  { key: 'Cancelled', label: 'Cancelled' },
+];
 
 export default function MyReports() {
   const navigate = useNavigate();
@@ -56,9 +66,12 @@ export default function MyReports() {
         }
 
         const list = data || [];
-        if (isMounted) setReports(list);
+        if (isMounted) {
+          setReports(list);
+          setError(null);
+        }
 
-        // Resolve signed URLs for photos in report-photos bucket
+        // Resolve signed URLs for photos in report-photos private bucket
         const photoPaths = list
           .map((r) => r.photo_url)
           .filter(Boolean);
@@ -91,7 +104,7 @@ export default function MyReports() {
 
     loadReports();
 
-    // Realtime subscription for citizen's reports
+    // Realtime subscription for citizen's own reports
     const reportsChannel = supabase
       .channel(`citizen-reports-${citizenId}`)
       .on(
@@ -114,25 +127,21 @@ export default function MyReports() {
     };
   }, [user, refreshKey]);
 
+  // Compute counts for each status filter
+  const filterCounts = STATUS_FILTERS.reduce((acc, f) => {
+    if (f.key === 'all') {
+      acc[f.key] = reports.length;
+    } else {
+      acc[f.key] = reports.filter((r) => r.status === f.key).length;
+    }
+    return acc;
+  }, {});
+
   // Filter reports
   const filteredReports = reports.filter((r) => {
     if (statusFilter === 'all') return true;
-    if (statusFilter === 'active') {
-      return ['Reported', 'Assigned', 'Accepted', 'In Progress'].includes(r.status);
-    }
-    if (statusFilter === 'resolved') {
-      return r.status === 'Resolved';
-    }
-    if (statusFilter === 'cancelled') {
-      return r.status === 'Cancelled';
-    }
-    return true;
+    return r.status === statusFilter;
   });
-
-  const activeCount = reports.filter((r) =>
-    ['Reported', 'Assigned', 'Accepted', 'In Progress'].includes(r.status)
-  ).length;
-  const resolvedCount = reports.filter((r) => r.status === 'Resolved').length;
 
   return (
     <div className="citizen-layout">
@@ -142,6 +151,11 @@ export default function MyReports() {
         {/* Page Header */}
         <header className="tracking-header">
           <div className="tracking-header-text">
+            <nav className="details-breadcrumb-nav" aria-label="Breadcrumb" style={{ marginBottom: '0.5rem' }}>
+              <Link to="/citizen" className="btn-back-crumb">
+                &larr; Dashboard
+              </Link>
+            </nav>
             <h1>My Incident Reports</h1>
             <p>
               Track all municipal waste incidents submitted from your account. Monitor dispatch, view cleanup progress, and review resolution evidence.
@@ -149,6 +163,13 @@ export default function MyReports() {
           </div>
 
           <div className="tracking-actions-bar">
+            <Link
+              to="/citizen"
+              className="btn-form-cancel"
+              style={{ padding: '0.65rem 1.1rem', fontSize: '0.9rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <span>Dashboard</span>
+            </Link>
             <button
               type="button"
               className="btn-form-submit"
@@ -163,33 +184,18 @@ export default function MyReports() {
         {/* Filter Navigation Tabs */}
         <div className="tracking-filter-bar">
           <div className="filter-pills" role="tablist" aria-label="Filter reports by status">
-            <button
-              type="button"
-              role="tab"
-              className={`filter-pill-btn ${statusFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setStatusFilter('all')}
-              aria-selected={statusFilter === 'all'}
-            >
-              All Reports <span className="filter-pill-count">{reports.length}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={`filter-pill-btn ${statusFilter === 'active' ? 'active' : ''}`}
-              onClick={() => setStatusFilter('active')}
-              aria-selected={statusFilter === 'active'}
-            >
-              Active Cleanups <span className="filter-pill-count">{activeCount}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={`filter-pill-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
-              onClick={() => setStatusFilter('resolved')}
-              aria-selected={statusFilter === 'resolved'}
-            >
-              Resolved <span className="filter-pill-count">{resolvedCount}</span>
-            </button>
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                role="tab"
+                className={`filter-pill-btn ${statusFilter === f.key ? 'active' : ''}`}
+                onClick={() => setStatusFilter(f.key)}
+                aria-selected={statusFilter === f.key}
+              >
+                {f.label} <span className="filter-pill-count">{filterCounts[f.key] || 0}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -218,7 +224,7 @@ export default function MyReports() {
           </div>
         )}
 
-        {/* Empty State */}
+        {/* Empty State: No reports at all */}
         {!loading && !error && reports.length === 0 && (
           <div className="state-box">
             <span className="state-icon" aria-hidden="true">📋</span>
@@ -241,7 +247,7 @@ export default function MyReports() {
           <div className="state-box">
             <span className="state-icon" aria-hidden="true">🔍</span>
             <p className="state-title">No reports match &ldquo;{statusFilter}&rdquo;</p>
-            <p className="state-desc">Try selecting &ldquo;All Reports&rdquo; to view all your submissions.</p>
+            <p className="state-desc">Try selecting &ldquo;All&rdquo; to view all your submissions.</p>
             <button
               type="button"
               className="btn-form-cancel state-action-btn"
@@ -304,6 +310,9 @@ export default function MyReports() {
                     </div>
 
                     <div className="report-card-meta-tags">
+                      <span className="report-card-ref-badge" title={`Report Reference: ${report.id}`}>
+                        #{report.id.slice(0, 8)}
+                      </span>
                       <span className="tag-garbage-type">
                         {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
                       </span>

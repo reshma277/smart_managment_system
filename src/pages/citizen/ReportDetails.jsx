@@ -35,16 +35,23 @@ export default function ReportDetails() {
   const [assignedWorker, setAssignedWorker] = useState(null);
   const [incidentPhotoSignedUrl, setIncidentPhotoSignedUrl] = useState(null);
   const [resolutionPhotoSignedUrl, setResolutionPhotoSignedUrl] = useState(null);
+  const [supporterCount, setSupporterCount] = useState(null);
+  const [isSupporting, setIsSupporting] = useState(false);
+  const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
+  const [supportFeedback, setSupportFeedback] = useState(null); // { type: 'success' | 'error', message: string }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    if (!reportId || !user?.id) return;
+    const userId = user?.id;
+    if (!reportId || !userId) return;
 
     let isMounted = true;
 
     async function loadReportDetails() {
       try {
+        // 1. Fetch main report row respecting RLS
         const { data, error: reportErr } = await supabase
           .from('reports')
           .select('*')
@@ -64,9 +71,10 @@ export default function ReportDetails() {
 
         if (isMounted) {
           setReport(data);
+          setError(null);
         }
 
-        // 1. Resolve incident photo signed URL if path exists
+        // 2. Resolve incident photo signed URL if path exists
         if (data.photo_url) {
           try {
             const { data: signData, error: signErr } = await supabase.storage
@@ -79,9 +87,11 @@ export default function ReportDetails() {
           } catch (err) {
             console.warn('Incident photo signed URL generation failed:', err);
           }
+        } else if (isMounted) {
+          setIncidentPhotoSignedUrl(null);
         }
 
-        // 2. Resolve resolution proof photo signed URL if exists
+        // 3. Resolve resolution proof photo signed URL if exists
         if (data.resolution_photo_url) {
           try {
             const { data: resSignData, error: resSignErr } = await supabase.storage
@@ -94,9 +104,11 @@ export default function ReportDetails() {
           } catch (err) {
             console.warn('Resolution photo signed URL generation failed:', err);
           }
+        } else if (isMounted) {
+          setResolutionPhotoSignedUrl(null);
         }
 
-        // 3. If worker is assigned, fetch non-sensitive worker public profile
+        // 4. If worker is assigned, fetch non-sensitive worker public profile
         if (data.assigned_worker_id) {
           try {
             const { data: workerData } = await supabase
@@ -113,6 +125,36 @@ export default function ReportDetails() {
           }
         } else if (isMounted) {
           setAssignedWorker(null);
+        }
+
+        // 5. Check if authenticated user supports this report
+        try {
+          const { data: supporterRecord } = await supabase
+            .from('report_supporters')
+            .select('id')
+            .eq('report_id', reportId)
+            .eq('citizen_id', userId)
+            .maybeSingle();
+
+          if (isMounted) {
+            setIsSupporting(!!supporterRecord);
+          }
+        } catch (supCheckErr) {
+          console.warn('Could not check user support status:', supCheckErr);
+        }
+
+        // 6. Fetch total supporter count when available
+        try {
+          const { count, error: countErr } = await supabase
+            .from('report_supporters')
+            .select('id', { count: 'exact', head: true })
+            .eq('report_id', reportId);
+
+          if (!countErr && typeof count === 'number' && isMounted) {
+            setSupporterCount(count);
+          }
+        } catch (countErr) {
+          console.warn('Could not fetch supporter count:', countErr);
         }
       } catch (err) {
         console.error('Report details exception:', err);
@@ -145,7 +187,54 @@ export default function ReportDetails() {
       isMounted = false;
       supabase.removeChannel(reportChannel);
     };
-  }, [reportId, user]);
+  }, [reportId, user, refreshKey]);
+
+  // Handle citizen supporting an active report via existing RPC
+  const handleSupportReport = async () => {
+    if (isSubmittingSupport || isSupporting || !reportId) return;
+
+    setIsSubmittingSupport(true);
+    setSupportFeedback(null);
+
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('support_existing_report', {
+        p_report_id: reportId,
+      });
+
+      if (rpcErr) {
+        console.error('support_existing_report RPC error:', rpcErr);
+        setSupportFeedback({
+          type: 'error',
+          message: rpcErr.message || 'Failed to support report. Please try again.',
+        });
+      } else if (rpcRes?.success === false) {
+        setSupportFeedback({
+          type: 'error',
+          message: rpcRes.message || 'Unable to support this report.',
+        });
+      } else {
+        setIsSupporting(true);
+        if (typeof rpcRes?.supporters_count === 'number') {
+          setSupporterCount(rpcRes.supporters_count);
+        } else {
+          setSupporterCount((prev) => (prev !== null ? prev + 1 : 1));
+        }
+        setSupportFeedback({
+          type: 'success',
+          message: 'You are now supporting this incident and will receive progress updates.',
+        });
+        setRefreshKey((k) => k + 1);
+      }
+    } catch (err) {
+      console.error('Support report exception:', err);
+      setSupportFeedback({
+        type: 'error',
+        message: 'Network error occurred while registering your support.',
+      });
+    } finally {
+      setIsSubmittingSupport(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -171,13 +260,22 @@ export default function ReportDetails() {
             <span className="state-icon" aria-hidden="true">⚠️</span>
             <h1 className="state-title">Report Unavailable</h1>
             <p className="state-desc">{error || 'The requested incident report was not found.'}</p>
-            <button
-              type="button"
-              className="btn-form-submit state-action-btn"
-              onClick={() => navigate('/citizen/reports')}
-            >
-              &larr; Back to My Reports
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '1rem' }}>
+              <button
+                type="button"
+                className="btn-form-submit state-action-btn"
+                onClick={() => navigate('/citizen/reports')}
+              >
+                &larr; Back to My Reports
+              </button>
+              <button
+                type="button"
+                className="btn-form-cancel state-action-btn"
+                onClick={() => navigate('/citizen')}
+              >
+                Dashboard
+              </button>
+            </div>
           </div>
         </main>
       </div>
@@ -193,29 +291,55 @@ export default function ReportDetails() {
   });
 
   const isResolved = report.status === 'Resolved';
+  const isActive = !['Resolved', 'Cancelled'].includes(report.status);
+  const isCreator = report.citizen_id === user?.id;
 
   return (
     <div className="citizen-layout">
       <UserNavbar />
 
       <main className="tracking-container" role="main">
-        {/* Header with breadcrumb navigation */}
+        {/* Header with navigation actions */}
         <header className="report-details-header">
-          <nav className="details-breadcrumb-nav" aria-label="Breadcrumb">
-            <Link to="/citizen" className="btn-back-crumb">
-              Dashboard
-            </Link>
-            <span aria-hidden="true">/</span>
-            <Link to="/citizen/reports" className="btn-back-crumb">
-              My Reports
-            </Link>
-            <span aria-hidden="true">/</span>
-            <span aria-current="page">Incident #{report.id.slice(0, 8)}</span>
-          </nav>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <nav className="details-breadcrumb-nav" aria-label="Breadcrumb">
+              <Link to="/citizen" className="btn-back-crumb">
+                Dashboard
+              </Link>
+              <span aria-hidden="true">/</span>
+              <Link to="/citizen/reports" className="btn-back-crumb">
+                My Reports
+              </Link>
+              <span aria-hidden="true">/</span>
+              <span aria-current="page">Incident #{report.id.slice(0, 8)}</span>
+            </nav>
+
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className="btn-form-cancel"
+                onClick={() => navigate('/citizen/reports')}
+                style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
+              >
+                &larr; All Reports
+              </button>
+              <button
+                type="button"
+                className="btn-form-cancel"
+                onClick={() => navigate('/citizen')}
+                style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
+              >
+                Dashboard
+              </button>
+            </div>
+          </div>
 
           <div className="report-details-title-row">
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                <span className="report-card-ref-badge" title={`Report Reference ID: ${report.id}`}>
+                  #{report.id.slice(0, 8)}
+                </span>
                 <span className="tag-garbage-type">
                   {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
                 </span>
@@ -225,7 +349,7 @@ export default function ReportDetails() {
               </div>
               <h1>{report.title}</h1>
               <p style={{ margin: 0, color: 'var(--text)', fontSize: '0.9rem' }}>
-                Filed on <strong>{createdFormatted}</strong> • Reference ID: <code>{report.id}</code>
+                Filed on <strong>{createdFormatted}</strong> &bull; Reference ID: <code>{report.id}</code>
               </p>
             </div>
 
@@ -301,7 +425,7 @@ export default function ReportDetails() {
                   </p>
                 )}
 
-                {resolutionPhotoSignedUrl && (
+                {resolutionPhotoSignedUrl ? (
                   <div className="details-photo-box" style={{ marginTop: '0.5rem' }}>
                     <img
                       src={resolutionPhotoSignedUrl}
@@ -320,6 +444,15 @@ export default function ReportDetails() {
                       </a>
                     </div>
                   </div>
+                ) : (
+                  <div className="state-box" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.6)' }}>
+                    <span aria-hidden="true" style={{ fontSize: '1.5rem' }}>📷</span>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text)' }}>
+                      {report.resolution_photo_url
+                        ? 'Resolution proof photo is securely archived.'
+                        : 'No post-cleanup resolution photo attached.'}
+                    </p>
+                  </div>
                 )}
               </section>
             )}
@@ -329,12 +462,105 @@ export default function ReportDetails() {
               <h2 id="timeline-heading">
                 <span aria-hidden="true">⏱️</span> Status Progression Timeline
               </h2>
-              <ReportTimeline reportId={report.id} />
+              <ReportTimeline key={refreshKey} reportId={report.id} />
             </section>
           </div>
 
-          {/* Right Column: Location, Worker Assignment & Metadata */}
+          {/* Right Column: Community Support, Location, Dispatch & Metadata */}
           <aside className="report-details-sidebar" aria-label="Incident metadata">
+            {/* Community Support Card */}
+            <div className="details-section-card" aria-labelledby="support-heading">
+              <h2 id="support-heading">
+                <span aria-hidden="true">🤝</span> Community Support
+              </h2>
+
+              <div className="sidebar-meta-list">
+                <div className="sidebar-meta-row">
+                  <span className="sidebar-meta-label">Supporters:</span>
+                  <span className="sidebar-meta-value">
+                    {supporterCount !== null ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#059669', fontWeight: 700 }}>
+                        <span aria-hidden="true">👥</span> {supporterCount} {supporterCount === 1 ? 'Citizen' : 'Citizens'}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text)' }}>Available on update</span>
+                    )}
+                  </span>
+                </div>
+
+                <div className="sidebar-meta-row">
+                  <span className="sidebar-meta-label">Your Status:</span>
+                  <span className="sidebar-meta-value">
+                    {isCreator ? (
+                      <span className="worker-badge-pill" style={{ background: 'rgba(5, 150, 105, 0.1)', color: '#059669', borderColor: 'rgba(5, 150, 105, 0.25)' }}>
+                        <span aria-hidden="true">✍️</span> Submitter / Creator
+                      </span>
+                    ) : isSupporting ? (
+                      <span className="worker-badge-pill" style={{ background: 'rgba(5, 150, 105, 0.1)', color: '#059669', borderColor: 'rgba(5, 150, 105, 0.25)' }}>
+                        <span aria-hidden="true">✓</span> Supporting
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text)', fontWeight: 400 }}>Not following</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Support Action Area */}
+              {!isCreator && isActive && (
+                <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                  {isSupporting ? (
+                    <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', fontSize: '0.85rem', color: '#047857' }}>
+                      <strong>✓ You are supporting this report</strong>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.775rem', lineHeight: 1.4 }}>
+                        You will receive notifications when municipal workers update dispatch or resolve this incident.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.825rem', color: 'var(--text)', lineHeight: 1.45 }}>
+                        Also affected by this garbage issue? Support this report to increase municipal attention and follow dispatch updates.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-form-submit"
+                        onClick={handleSupportReport}
+                        disabled={isSubmittingSupport}
+                        style={{ width: '100%', padding: '0.65rem', fontSize: '0.875rem' }}
+                      >
+                        {isSubmittingSupport ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
+                            <span className="auth-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                            Registering support...
+                          </span>
+                        ) : (
+                          <span>👍 Support this Report</span>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Support action feedback alert */}
+                  {supportFeedback && (
+                    <div
+                      style={{
+                        marginTop: '0.75rem',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        background: supportFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        color: supportFeedback.type === 'success' ? '#047857' : '#dc2626',
+                        border: `1px solid ${supportFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                      }}
+                      role="alert"
+                    >
+                      {supportFeedback.message}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Location Card */}
             <div className="details-section-card">
               <h2>
@@ -350,7 +576,9 @@ export default function ReportDetails() {
                 <div className="sidebar-meta-row">
                   <span className="sidebar-meta-label">Coordinates:</span>
                   <span className="sidebar-meta-value">
-                    {report.latitude.toFixed(5)}, {report.longitude.toFixed(5)}
+                    {typeof report.latitude === 'number' && typeof report.longitude === 'number'
+                      ? `${report.latitude.toFixed(5)}, ${report.longitude.toFixed(5)}`
+                      : 'Unavailable'}
                   </span>
                 </div>
               </div>
@@ -385,6 +613,22 @@ export default function ReportDetails() {
                     <span className="sidebar-meta-label">Assigned Date:</span>
                     <span className="sidebar-meta-value">
                       {new Date(report.assigned_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {report.accepted_at && (
+                  <div className="sidebar-meta-row">
+                    <span className="sidebar-meta-label">Accepted Date:</span>
+                    <span className="sidebar-meta-value">
+                      {new Date(report.accepted_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {report.in_progress_at && (
+                  <div className="sidebar-meta-row">
+                    <span className="sidebar-meta-label">Work Started:</span>
+                    <span className="sidebar-meta-value">
+                      {new Date(report.in_progress_at).toLocaleDateString()}
                     </span>
                   </div>
                 )}

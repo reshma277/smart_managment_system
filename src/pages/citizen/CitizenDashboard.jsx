@@ -7,36 +7,59 @@ import { supabase } from '../../lib/supabase';
 import '../../styles/citizen.css';
 import '../../styles/citizen-tracking.css';
 
+const GARBAGE_TYPE_CONFIG = {
+  general: { label: 'General Waste', icon: '🗑️' },
+  household: { label: 'Household Waste', icon: '🏠' },
+  commercial: { label: 'Commercial Waste', icon: '🏢' },
+  construction: { label: 'Construction / Debris', icon: '🧱' },
+  organic: { label: 'Organic / Food Waste', icon: '🍎' },
+  plastic: { label: 'Plastic / Recyclable', icon: '♻️' },
+  paper: { label: 'Paper / Cardboard', icon: '📦' },
+  metal: { label: 'Metal / Scrap', icon: '🥫' },
+  electronic: { label: 'Electronic (E-waste)', icon: '💻' },
+  hazardous: { label: 'Hazardous / Biohazard', icon: '☣️' },
+  bulk: { label: 'Bulk / Large Items', icon: '🛋️' },
+  other: { label: 'Other / Mixed', icon: '🗑️' },
+};
+
 export default function CitizenDashboard() {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
 
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
     resolved: 0,
-    loading: true,
+    notifications: 0,
+    unreadNotifications: 0,
   });
 
   const [recentReports, setRecentReports] = useState([]);
-  const [recentReportsLoading, setRecentReportsLoading] = useState(false);
   const [recentNotifications, setRecentNotifications] = useState([]);
-  const [recentNotificationsLoading, setRecentNotificationsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const displayName = profile?.full_name || user?.user_metadata?.full_name || 'Citizen';
+  const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Citizen';
   const displayEmail = profile?.email || user?.email || '';
 
-  // Initial fetch and Realtime listener
   useEffect(() => {
     const citizenId = user?.id;
     if (!citizenId) return;
 
     let isMounted = true;
 
-    async function loadStats() {
+    async function loadDashboardData() {
       try {
-        const [totalRes, activeRes, resolvedRes] = await Promise.all([
+        const [
+          totalRes,
+          activeRes,
+          resolvedRes,
+          notifsTotalRes,
+          notifsUnreadRes,
+          reportsRes,
+          notifsRes,
+        ] = await Promise.all([
           supabase
             .from('reports')
             .select('*', { count: 'exact', head: true })
@@ -51,64 +74,64 @@ export default function CitizenDashboard() {
             .select('*', { count: 'exact', head: true })
             .eq('citizen_id', citizenId)
             .eq('status', 'Resolved'),
+          supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', citizenId),
+          supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', citizenId)
+            .eq('is_read', false),
+          supabase
+            .from('reports')
+            .select('id, title, status, garbage_type, address, created_at')
+            .eq('citizen_id', citizenId)
+            .order('created_at', { ascending: false })
+            .limit(5),
+          supabase
+            .from('notifications')
+            .select('id, title, message, type, is_read, report_id, created_at')
+            .eq('user_id', citizenId)
+            .order('created_at', { ascending: false })
+            .limit(5),
         ]);
+
+        if (reportsRes.error || notifsRes.error || totalRes.error) {
+          console.error('Error fetching dashboard data:', reportsRes.error || notifsRes.error || totalRes.error);
+          if (isMounted) {
+            setError('Unable to load citizen dashboard data. Please try again.');
+            setLoading(false);
+          }
+          return;
+        }
 
         if (isMounted) {
           setStats({
             total: totalRes.count || 0,
             active: activeRes.count || 0,
             resolved: resolvedRes.count || 0,
-            loading: false,
+            notifications: notifsTotalRes.count || 0,
+            unreadNotifications: notifsUnreadRes.count || 0,
           });
+
+          setRecentReports(reportsRes.data || []);
+          setRecentNotifications(notifsRes.data || []);
+          setError(null);
+          setLoading(false);
         }
       } catch (err) {
-        console.error('Error loading dashboard stats:', err);
-        if (isMounted) setStats((prev) => ({ ...prev, loading: false }));
+        console.error('Exception loading citizen dashboard:', err);
+        if (isMounted) {
+          setError('Network error while retrieving dashboard information. Please try again.');
+          setLoading(false);
+        }
       }
     }
 
-    async function loadReports() {
-      try {
-        const { data, error } = await supabase
-          .from('reports')
-          .select('id, title, status, garbage_type, address, created_at')
-          .eq('citizen_id', citizenId)
-          .order('created_at', { ascending: false })
-          .limit(3);
+    loadDashboardData();
 
-        if (!error && data && isMounted) {
-          setRecentReports(data);
-        }
-      } catch (err) {
-        console.error('Error fetching recent reports:', err);
-      } finally {
-        if (isMounted) setRecentReportsLoading(false);
-      }
-    }
-
-    async function loadNotifications() {
-      try {
-        const { data, error } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', citizenId)
-          .order('created_at', { ascending: false })
-          .limit(4);
-
-        if (!error && data && isMounted) {
-          setRecentNotifications(data);
-        }
-      } catch (err) {
-        console.error('Error fetching recent notifications:', err);
-      } finally {
-        if (isMounted) setRecentNotificationsLoading(false);
-      }
-    }
-
-    loadStats();
-    loadReports();
-    loadNotifications();
-
+    // Subscribe to changes on reports table for this citizen
     const reportsChannel = supabase
       .channel(`citizen-dash-reports-${citizenId}`)
       .on(
@@ -120,12 +143,12 @@ export default function CitizenDashboard() {
           filter: `citizen_id=eq.${citizenId}`,
         },
         () => {
-          loadStats();
-          loadReports();
+          loadDashboardData();
         }
       )
       .subscribe();
 
+    // Subscribe to changes on notifications table for this citizen
     const notifsChannel = supabase
       .channel(`citizen-dash-notifs-${citizenId}`)
       .on(
@@ -137,7 +160,7 @@ export default function CitizenDashboard() {
           filter: `user_id=eq.${citizenId}`,
         },
         () => {
-          loadNotifications();
+          loadDashboardData();
         }
       )
       .subscribe();
@@ -147,10 +170,41 @@ export default function CitizenDashboard() {
       supabase.removeChannel(reportsChannel);
       supabase.removeChannel(notifsChannel);
     };
-  }, [user]);
+  }, [user?.id, refreshKey]);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    setRefreshKey((k) => k + 1);
+  };
 
   const handleReportGarbageClick = () => {
     navigate('/citizen/report');
+  };
+
+  const handleNotificationClick = async (notif) => {
+    if (!notif.is_read) {
+      try {
+        await supabase.rpc('mark_notification_read', {
+          p_notification_id: notif.id,
+        });
+        setRecentNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+        );
+        setStats((prev) => ({
+          ...prev,
+          unreadNotifications: Math.max(0, prev.unreadNotifications - 1),
+        }));
+      } catch {
+        // Ignored
+      }
+    }
+
+    if (notif.report_id) {
+      navigate(`/citizen/reports/${notif.report_id}`);
+    } else {
+      navigate('/citizen/notifications');
+    }
   };
 
   const formatDate = (isoStr) => {
@@ -163,13 +217,24 @@ export default function CitizenDashboard() {
     });
   };
 
+  const formatNotificationTime = (isoStr) => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <div className="citizen-layout">
       {/* Universal authenticated navigation bar */}
       <UserNavbar />
 
       <main className="citizen-main-content" role="main">
-        {/* Hero & Page Header */}
+        {/* 1. Dashboard Header */}
         <header className="citizen-hero-card">
           <div className="citizen-hero-top">
             <div className="citizen-header-info">
@@ -177,324 +242,300 @@ export default function CitizenDashboard() {
                 📍
               </div>
               <div className="citizen-header-text">
-                <h1>Citizen Waste Portal</h1>
+                <h1>Welcome back, {displayName}</h1>
                 <div className="citizen-meta">
-                  <span>Welcome, <strong>{displayName}</strong></span>
+                  <span>Citizen Operations Portal</span>
                   {displayEmail && <span className="citizen-email">{displayEmail}</span>}
                 </div>
               </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <nav className="citizen-nav-tabs" aria-label="Citizen portal sections">
+            <div className="citizen-actions-bar" style={{ border: 'none', padding: 0 }}>
               <button
                 type="button"
-                className={`nav-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveTab('overview')}
-                aria-current={activeTab === 'overview' ? 'page' : undefined}
+                className="btn-report-garbage"
+                onClick={handleReportGarbageClick}
+                aria-label="Report Garbage Incident"
               >
-                <span aria-hidden="true">📊</span> Overview
+                <span className="btn-icon" aria-hidden="true">📢</span>
+                <span>Report Garbage</span>
               </button>
-              <button
-                type="button"
-                className={`nav-tab-btn ${activeTab === 'my-reports' ? 'active' : ''}`}
-                onClick={() => setActiveTab('my-reports')}
-                aria-current={activeTab === 'my-reports' ? 'page' : undefined}
-              >
-                <span aria-hidden="true">📋</span> My Reports
-                {stats.total > 0 && <span className="tab-counter-badge">{stats.total}</span>}
-              </button>
-              <button
-                type="button"
-                className={`nav-tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
-                onClick={() => setActiveTab('notifications')}
-                aria-current={activeTab === 'notifications' ? 'page' : undefined}
-              >
-                <span aria-hidden="true">🔔</span> Notifications
-              </button>
-            </nav>
+            </div>
           </div>
 
           <p className="citizen-hero-description">
-            Report public waste accumulation, track assigned municipal cleanup teams, and verify incident resolution in real time.
+            Report public waste accumulation in your neighborhood, track assigned municipal cleanup teams, and receive verified resolution alerts in real time.
           </p>
-
-          {/* Prominent Primary Action Bar */}
-          <div className="citizen-actions-bar">
-            <button
-              type="button"
-              className="btn-report-garbage"
-              onClick={handleReportGarbageClick}
-              aria-label="Report Garbage Incident"
-            >
-              <span className="btn-icon" aria-hidden="true">📢</span>
-              <span>Report Garbage</span>
-            </button>
-
-            <span className="section-badge">Municipal Dispatch Area</span>
-          </div>
         </header>
 
-        {/* Real Live Database Summary Cards */}
-        <section aria-labelledby="summary-heading">
-          <div className="section-header">
-            <h2 id="summary-heading">Reports Summary</h2>
-            <span className="section-badge section-badge-live">
-              <span className="live-dot" aria-hidden="true"></span>
-              Live Database
-            </span>
+        {/* 5. Loading / Error State Handling */}
+        {loading ? (
+          <div className="state-box" aria-live="polite">
+            <div className="auth-spinner" style={{ width: '36px', height: '36px' }} />
+            <h2 className="state-title">Loading Citizen Dashboard...</h2>
+            <p className="state-desc">Retrieving your reports summary and municipal notifications.</p>
           </div>
-
-          <div className="citizen-stats-grid">
-            {/* Card 1: Total Reports */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">Total Reports</h3>
-                <div className="stat-card-icon stat-icon-total" aria-hidden="true">
-                  📋
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? (
-                  <span className="stat-placeholder-dash">...</span>
-                ) : (
-                  <span>{stats.total}</span>
-                )}
-                <span className="stat-state-badge">
-                  {stats.loading ? 'Syncing' : 'Filed'}
-                </span>
-              </div>
-              <p className="stat-card-description">
-                Total waste incidents reported by your account
-              </p>
-            </article>
-
-            {/* Card 2: Active Reports */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">Active Reports</h3>
-                <div className="stat-card-icon stat-icon-active" aria-hidden="true">
-                  ⏳
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? (
-                  <span className="stat-placeholder-dash">...</span>
-                ) : (
-                  <span>{stats.active}</span>
-                )}
-                <span className="stat-state-badge">
-                  {stats.active > 0 ? 'In Action' : 'All Clear'}
-                </span>
-              </div>
-              <p className="stat-card-description">
-                Reports currently pending, assigned, or in progress
-              </p>
-            </article>
-
-            {/* Card 3: Resolved Reports */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">Resolved Reports</h3>
-                <div className="stat-card-icon stat-icon-resolved" aria-hidden="true">
-                  ✅
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? (
-                  <span className="stat-placeholder-dash">...</span>
-                ) : (
-                  <span>{stats.resolved}</span>
-                )}
-                <span className="stat-state-badge">
-                  {stats.resolved > 0 ? 'Verified' : 'Pending'}
-                </span>
-              </div>
-              <p className="stat-card-description">
-                Incidents cleaned and verified by municipal sanitation teams
-              </p>
-            </article>
+        ) : error ? (
+          <div className="state-box" role="alert">
+            <span className="state-icon" aria-hidden="true">⚠️</span>
+            <h2 className="state-title">Unable to Load Dashboard</h2>
+            <p className="state-desc">{error}</p>
+            <button
+              type="button"
+              className="btn-report-garbage state-action-btn"
+              onClick={handleRetry}
+            >
+              <span>Try Again</span>
+            </button>
           </div>
-        </section>
-
-        {/* Tab Content Panels */}
-        <section className="citizen-panel-card" aria-label="Selected View">
-          {activeTab === 'overview' && (
-            <div className="panel-empty-state">
-              <span className="empty-icon" aria-hidden="true">🌱</span>
-              <h3>Civic Waste Management</h3>
-              <p>
-                As a registered citizen, you can report unattended waste, track nearby reports, and follow progress directly through the municipal dispatch pipeline.
-              </p>
-
-              <div className="step-roadmap-grid">
-                <div className="roadmap-item">
-                  <span className="roadmap-step-badge">Step 1 — Foundation</span>
-                  <h4>Citizen Dashboard</h4>
-                  <p>Authenticated access, responsive navigation, and live summary statistics.</p>
-                </div>
-                <div className="roadmap-item">
-                  <span className="roadmap-step-badge">Step 2 — Filing</span>
-                  <h4>Report Incident</h4>
-                  <p>GPS auto-geolocation, private photo upload, and 30m duplicate check.</p>
-                </div>
-                <div className="roadmap-item">
-                  <span className="roadmap-step-badge">Step 3 — Tracking</span>
-                  <h4>Live Tracking & Alerts</h4>
-                  <p>Real-time lifecycle timeline from Reported to Resolved.</p>
-                </div>
+        ) : (
+          <>
+            {/* 2. Summary Cards Grid */}
+            <section aria-labelledby="summary-heading">
+              <div className="section-header">
+                <h2 id="summary-heading">Activity Overview</h2>
+                <span className="section-badge section-badge-live">
+                  <span className="live-dot" aria-hidden="true"></span>
+                  Live Dispatch
+                </span>
               </div>
-            </div>
-          )}
 
-          {activeTab === 'my-reports' && (
-            <div className="tab-content-container">
-              <div className="tab-pane-header">
-                <div>
-                  <h3 className="tab-pane-title">Recent Waste Incidents</h3>
-                  <p className="tab-pane-sub">Your latest reported municipal waste cases</p>
-                </div>
-                <div className="tab-pane-actions">
+              <div className="citizen-stats-grid">
+                {/* Card 1: Total Reports */}
+                <article className="stat-card">
+                  <div className="stat-card-header">
+                    <h3 className="stat-card-title">Total Reports</h3>
+                    <div className="stat-card-icon stat-icon-total" aria-hidden="true">
+                      📋
+                    </div>
+                  </div>
+                  <div className="stat-card-value">
+                    <span>{stats.total}</span>
+                    <span className="stat-state-badge">Filed</span>
+                  </div>
+                  <p className="stat-card-description">
+                    Total waste incidents submitted from your account
+                  </p>
+                </article>
+
+                {/* Card 2: Active Reports */}
+                <article className="stat-card">
+                  <div className="stat-card-header">
+                    <h3 className="stat-card-title">Active Reports</h3>
+                    <div className="stat-card-icon stat-icon-active" aria-hidden="true">
+                      ⏳
+                    </div>
+                  </div>
+                  <div className="stat-card-value">
+                    <span>{stats.active}</span>
+                    <span className="stat-state-badge">
+                      {stats.active > 0 ? 'In Action' : 'All Clear'}
+                    </span>
+                  </div>
+                  <p className="stat-card-description">
+                    Incidents currently pending, assigned, or in progress
+                  </p>
+                </article>
+
+                {/* Card 3: Resolved Reports */}
+                <article className="stat-card">
+                  <div className="stat-card-header">
+                    <h3 className="stat-card-title">Resolved Reports</h3>
+                    <div className="stat-card-icon stat-icon-resolved" aria-hidden="true">
+                      ✅
+                    </div>
+                  </div>
+                  <div className="stat-card-value">
+                    <span>{stats.resolved}</span>
+                    <span className="stat-state-badge">
+                      {stats.resolved > 0 ? 'Verified' : 'Pending'}
+                    </span>
+                  </div>
+                  <p className="stat-card-description">
+                    Incidents cleaned and verified with resolution evidence
+                  </p>
+                </article>
+
+                {/* Card 4: Notifications */}
+                <article className="stat-card">
+                  <div className="stat-card-header">
+                    <h3 className="stat-card-title">Notifications</h3>
+                    <div className="stat-card-icon stat-icon-notifs" aria-hidden="true">
+                      🔔
+                    </div>
+                  </div>
+                  <div className="stat-card-value">
+                    <span>{stats.notifications}</span>
+                    <span className="stat-state-badge">
+                      {stats.unreadNotifications > 0
+                        ? `${stats.unreadNotifications} Unread`
+                        : 'All Read'}
+                    </span>
+                  </div>
+                  <p className="stat-card-description">
+                    Updates, status changes, and dispatch alerts
+                  </p>
+                </article>
+              </div>
+            </section>
+
+            {/* 3 & 4. Recent Reports & Recent Notifications Grid */}
+            <div className="citizen-dashboard-grid">
+              {/* 3. Recent Reports Section */}
+              <section className="citizen-dashboard-section" aria-labelledby="recent-reports-heading">
+                <div className="citizen-section-header">
+                  <div>
+                    <h2 id="recent-reports-heading">
+                      <span aria-hidden="true">📋</span> Recent Reports
+                    </h2>
+                  </div>
                   <Link to="/citizen/reports" className="btn-secondary-link">
-                    View All Reports ({stats.total}) →
+                    View All Reports ({stats.total}) &rarr;
                   </Link>
                 </div>
-              </div>
 
-              {recentReportsLoading ? (
-                <div className="tracking-loading-state">
-                  <div className="tracking-spinner" />
-                  <p>Loading your reports...</p>
-                </div>
-              ) : recentReports.length === 0 ? (
-                <div className="panel-empty-state">
-                  <span className="empty-icon" aria-hidden="true">📋</span>
-                  <h3>No Reports Filed Yet</h3>
-                  <p>
-                    You haven&apos;t filed any waste incident reports yet. When you submit reports via the &quot;Report Garbage&quot; button, your submissions and live statuses will appear here.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn-report-garbage"
-                    onClick={handleReportGarbageClick}
-                    style={{ marginTop: '1rem' }}
-                  >
-                    <span>📢 File Your First Report</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="recent-reports-list">
-                  {recentReports.map((report) => (
-                    <div
-                      key={report.id}
-                      className="recent-report-item"
-                      onClick={() => navigate(`/citizen/reports/${report.id}`)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          navigate(`/citizen/reports/${report.id}`);
-                        }
-                      }}
+                {recentReports.length === 0 ? (
+                  <div className="state-box" style={{ padding: '2.5rem 1.5rem' }}>
+                    <span className="state-icon" aria-hidden="true">📋</span>
+                    <h3 className="state-title">No Reports Filed Yet</h3>
+                    <p className="state-desc">
+                      You haven&apos;t filed any waste incident reports yet. Use the button below to report waste accumulation in your area.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-report-garbage state-action-btn"
+                      onClick={handleReportGarbageClick}
                     >
-                      <div className="recent-report-info">
-                        <div className="recent-report-top">
-                          <h4 className="recent-report-title">{report.title}</h4>
-                          <ReportStatusBadge status={report.status} size="small" />
+                      <span className="btn-icon" aria-hidden="true">📢</span>
+                      <span>File Your First Report</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="recent-reports-list">
+                    {recentReports.map((report) => {
+                      const typeConfig = GARBAGE_TYPE_CONFIG[report.garbage_type] || {
+                        label: report.garbage_type || 'General Waste',
+                        icon: '🗑️',
+                      };
+
+                      return (
+                        <div
+                          key={report.id}
+                          className="recent-report-item"
+                          onClick={() => navigate(`/citizen/reports/${report.id}`)}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`View report: ${report.title}`}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              navigate(`/citizen/reports/${report.id}`);
+                            }
+                          }}
+                        >
+                          <div className="recent-report-info">
+                            <div className="recent-report-top">
+                              <h4 className="recent-report-title">{report.title}</h4>
+                              <ReportStatusBadge status={report.status} size="small" />
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span className="garbage-type-badge">
+                                <span aria-hidden="true">{typeConfig.icon}</span>
+                                <span>{typeConfig.label}</span>
+                              </span>
+                            </div>
+
+                            <p className="recent-report-address">
+                              <span aria-hidden="true">📍</span>
+                              <span>{report.address || 'Address recorded'}</span>
+                            </p>
+
+                            <span className="recent-report-date">
+                              Reported on {formatDate(report.created_at)}
+                            </span>
+                          </div>
+
+                          <span className="item-arrow-icon" aria-hidden="true">
+                            &rarr;
+                          </span>
                         </div>
-                        <p className="recent-report-address">📍 {report.address || 'Address recorded'}</p>
-                        <span className="recent-report-date">{formatDate(report.created_at)}</span>
-                      </div>
-                      <span className="item-arrow-icon" aria-hidden="true">→</span>
+                      );
+                    })}
+
+                    <div className="tab-pane-footer">
+                      <Link to="/citizen/reports" className="btn-secondary-link full-width-link">
+                        Manage and Track All My Reports &rarr;
+                      </Link>
                     </div>
-                  ))}
-
-                  <div className="tab-pane-footer">
-                    <Link to="/citizen/reports" className="btn-secondary-link full-width-link">
-                      Manage and Track All My Reports →
-                    </Link>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </section>
 
-          {activeTab === 'notifications' && (
-            <div className="tab-content-container">
-              <div className="tab-pane-header">
-                <div>
-                  <h3 className="tab-pane-title">Recent Notifications</h3>
-                  <p className="tab-pane-sub">Status changes, assignments, and updates on your reports</p>
-                </div>
-                <div className="tab-pane-actions">
+              {/* 4. Recent Notifications Section */}
+              <section className="citizen-dashboard-section" aria-labelledby="recent-notifs-heading">
+                <div className="citizen-section-header">
+                  <div>
+                    <h2 id="recent-notifs-heading">
+                      <span aria-hidden="true">🔔</span> Notifications
+                    </h2>
+                  </div>
                   <Link to="/citizen/notifications" className="btn-secondary-link">
-                    Open Notification Center →
+                    View All ({stats.notifications}) &rarr;
                   </Link>
                 </div>
-              </div>
 
-              {recentNotificationsLoading ? (
-                <div className="tracking-loading-state">
-                  <div className="tracking-spinner" />
-                  <p>Loading notifications...</p>
-                </div>
-              ) : recentNotifications.length === 0 ? (
-                <div className="panel-empty-state">
-                  <span className="empty-icon" aria-hidden="true">🔔</span>
-                  <h3>No Notifications</h3>
-                  <p>
-                    You have no new alerts. When municipal workers are assigned to your reports or complete cleanup, you will be notified here.
-                  </p>
-                </div>
-              ) : (
-                <div className="recent-notifications-list">
-                  {recentNotifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`recent-notif-item ${!n.is_read ? 'unread' : ''}`}
-                      onClick={() => {
-                        if (n.report_id) {
-                          navigate(`/citizen/reports/${n.report_id}`);
-                        } else {
-                          navigate('/citizen/notifications');
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          if (n.report_id) {
-                            navigate(`/citizen/reports/${n.report_id}`);
-                          } else {
-                            navigate('/citizen/notifications');
-                          }
-                        }
-                      }}
-                    >
-                      <div className="recent-notif-icon">
-                        {!n.is_read && <span className="notif-unread-dot" aria-label="Unread" />}
-                        <span>🔔</span>
-                      </div>
-                      <div className="recent-notif-body">
-                        <h4 className="recent-notif-title">{n.title}</h4>
-                        <p className="recent-notif-msg">{n.message}</p>
-                        <span className="recent-notif-time">{formatDate(n.created_at)}</span>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="tab-pane-footer">
-                    <Link to="/citizen/notifications" className="btn-secondary-link full-width-link">
-                      View All in Notifications Center →
-                    </Link>
+                {recentNotifications.length === 0 ? (
+                  <div className="state-box" style={{ padding: '2.5rem 1.5rem' }}>
+                    <span className="state-icon" aria-hidden="true">🔔</span>
+                    <h3 className="state-title">No Notifications Yet</h3>
+                    <p className="state-desc">
+                      You are all caught up. When municipal crews update your reports or complete cleanup, notifications will appear here.
+                    </p>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="recent-notifications-list">
+                    {recentNotifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`recent-notif-item ${!notif.is_read ? 'unread' : ''}`}
+                        onClick={() => handleNotificationClick(notif)}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Notification: ${notif.title}`}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleNotificationClick(notif);
+                          }
+                        }}
+                      >
+                        <div className="recent-notif-icon">
+                          {!notif.is_read && <span className="notif-unread-dot" aria-label="Unread alert" />}
+                          <span aria-hidden="true">🔔</span>
+                        </div>
+                        <div className="recent-notif-body">
+                          <h4 className="recent-notif-title">{notif.title}</h4>
+                          <p className="recent-notif-msg">{notif.message}</p>
+                          <span className="recent-notif-time">
+                            {formatNotificationTime(notif.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="tab-pane-footer">
+                      <Link to="/citizen/notifications" className="btn-secondary-link full-width-link">
+                        Open Notification Center &rarr;
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </section>
             </div>
-          )}
-        </section>
+          </>
+        )}
       </main>
     </div>
   );
 }
-
