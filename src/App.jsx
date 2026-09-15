@@ -19,6 +19,7 @@ import WorkerReports from './pages/worker/WorkerReports';
 import WorkerReportDetails from './pages/worker/WorkerReportDetails';
 import WorkerNotifications from './pages/worker/WorkerNotifications';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminReports from './pages/admin/AdminReports';
 
 import './styles/auth.css';
 
@@ -81,8 +82,10 @@ export default function App() {
             <Route path="/citizen" element={<CitizenDashboard />} />
             <Route path="/citizen/report" element={<ReportGarbage />} />
             <Route path="/citizen/reports" element={<MyReports />} />
-            <Route path="/citizen/reports/:reportId" element={<ReportDetails />} />
             <Route path="/citizen/notifications" element={<CitizenNotifications />} />
+          </Route>
+          <Route element={<RoleGuard allowedRoles={['citizen', 'admin']} />}>
+            <Route path="/citizen/reports/:reportId" element={<ReportDetails />} />
           </Route>
         </Route>
 
@@ -101,6 +104,8 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<RoleGuard allowedRoles={['admin']} />}>
             <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/reports" element={<AdminReports />} />
+            <Route path="/admin/reports/:reportId" element={<ReportDetails />} />
           </Route>
         </Route>
 

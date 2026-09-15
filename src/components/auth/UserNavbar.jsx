@@ -142,6 +142,24 @@ export default function UserNavbar() {
             </NavLink>
           </nav>
         )}
+
+        {role === 'admin' && (
+          <nav className="user-navbar-nav" aria-label="Admin Navigation">
+            <NavLink
+              to="/admin"
+              end
+              className={({ isActive }) => `user-nav-link ${isActive ? 'active' : ''}`}
+            >
+              <span>Dashboard</span>
+            </NavLink>
+            <NavLink
+              to="/admin/reports"
+              className={({ isActive }) => `user-nav-link ${isActive ? 'active' : ''}`}
+            >
+              <span>Manage Reports</span>
+            </NavLink>
+          </nav>
+        )}
       </div>
 
       <div className="user-navbar-actions">

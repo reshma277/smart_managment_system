@@ -6,6 +6,7 @@ import ReportTimeline from '../../components/citizen/ReportTimeline';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import '../../styles/citizen-tracking.css';
+import '../../styles/admin.css';
 
 const GARBAGE_TYPE_LABELS = {
   general: 'General Waste',
@@ -29,10 +30,11 @@ const SEVERITY_DESCRIPTIONS = {
 export default function ReportDetails() {
   const { reportId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   const [report, setReport] = useState(null);
   const [assignedWorker, setAssignedWorker] = useState(null);
+  const [reportingCitizen, setReportingCitizen] = useState(null);
   const [incidentPhotoSignedUrl, setIncidentPhotoSignedUrl] = useState(null);
   const [resolutionPhotoSignedUrl, setResolutionPhotoSignedUrl] = useState(null);
   const [supporterCount, setSupporterCount] = useState(null);
@@ -42,6 +44,17 @@ export default function ReportDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Admin worker assignment state
+  const [availableWorkers, setAvailableWorkers] = useState([]);
+  const [adminSelectedWorkerId, setAdminSelectedWorkerId] = useState('');
+  const [adminAssignNotes, setAdminAssignNotes] = useState('');
+  const [isAdminAssigning, setIsAdminAssigning] = useState(false);
+  const [adminAssignFeedback, setAdminAssignFeedback] = useState(null);
+
+  const isAdmin = role === 'admin';
+  const dashboardRoute = isAdmin ? '/admin' : '/citizen';
+  const reportsListRoute = isAdmin ? '/admin/reports' : '/citizen/reports';
 
   useEffect(() => {
     const userId = user?.id;
@@ -108,7 +121,7 @@ export default function ReportDetails() {
           setResolutionPhotoSignedUrl(null);
         }
 
-        // 4. If worker is assigned, fetch non-sensitive worker public profile
+        // 4. If worker is assigned, fetch worker profile
         if (data.assigned_worker_id) {
           try {
             const { data: workerData } = await supabase
@@ -127,7 +140,26 @@ export default function ReportDetails() {
           setAssignedWorker(null);
         }
 
-        // 5. Check if authenticated user supports this report
+        // 5. Look up reporting citizen if citizen_id present
+        if (data.citizen_id) {
+          try {
+            const { data: citizenData } = await supabase
+              .from('public_profiles')
+              .select('id, full_name, role')
+              .eq('id', data.citizen_id)
+              .maybeSingle();
+
+            if (citizenData && isMounted) {
+              setReportingCitizen(citizenData);
+            }
+          } catch (cErr) {
+            console.warn('Could not fetch citizen profile:', cErr);
+          }
+        } else if (isMounted) {
+          setReportingCitizen(null);
+        }
+
+        // 6. Check if authenticated user supports this report
         try {
           const { data: supporterRecord } = await supabase
             .from('report_supporters')
@@ -143,7 +175,7 @@ export default function ReportDetails() {
           console.warn('Could not check user support status:', supCheckErr);
         }
 
-        // 6. Fetch total supporter count when available
+        // 7. Fetch total supporter count when available
         try {
           const { count, error: countErr } = await supabase
             .from('report_supporters')
@@ -155,6 +187,23 @@ export default function ReportDetails() {
           }
         } catch (countErr) {
           console.warn('Could not fetch supporter count:', countErr);
+        }
+
+        // 8. If admin, fetch active workers for assignment control
+        if (role === 'admin') {
+          try {
+            const { data: workerList } = await supabase
+              .from('profiles')
+              .select('id, full_name, role, is_active')
+              .eq('role', 'worker')
+              .order('full_name', { ascending: true });
+
+            if (workerList && isMounted) {
+              setAvailableWorkers(workerList);
+            }
+          } catch (wListErr) {
+            console.warn('Could not fetch available workers:', wListErr);
+          }
         }
       } catch (err) {
         console.error('Report details exception:', err);
@@ -187,7 +236,7 @@ export default function ReportDetails() {
       isMounted = false;
       supabase.removeChannel(reportChannel);
     };
-  }, [reportId, user, refreshKey]);
+  }, [reportId, user, role, refreshKey]);
 
   // Handle citizen supporting an active report via existing RPC
   const handleSupportReport = async () => {
@@ -236,6 +285,52 @@ export default function ReportDetails() {
     }
   };
 
+  // Handle administrator assigning a field worker via existing RPC
+  const handleAdminAssignWorker = async (e) => {
+    e.preventDefault();
+    if (!adminSelectedWorkerId || isAdminAssigning || !reportId) return;
+
+    setIsAdminAssigning(true);
+    setAdminAssignFeedback(null);
+
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('assign_report_to_worker', {
+        p_report_id: reportId,
+        p_worker_id: adminSelectedWorkerId,
+        p_notes: adminAssignNotes.trim() || null,
+      });
+
+      if (rpcErr) {
+        console.error('assign_report_to_worker error:', rpcErr);
+        setAdminAssignFeedback({
+          type: 'error',
+          message: rpcErr.message || 'Worker assignment failed.',
+        });
+      } else if (rpcRes?.success === false) {
+        setAdminAssignFeedback({
+          type: 'error',
+          message: rpcRes.message || 'Assignment failed. Verify worker is active or report status is Reported.',
+        });
+      } else {
+        setAdminAssignFeedback({
+          type: 'success',
+          message: 'Worker assigned successfully! Incident status updated to Assigned.',
+        });
+        setAdminSelectedWorkerId('');
+        setAdminAssignNotes('');
+        setRefreshKey((k) => k + 1);
+      }
+    } catch (err) {
+      console.error('Admin worker assignment exception:', err);
+      setAdminAssignFeedback({
+        type: 'error',
+        message: 'Network error occurred during worker assignment.',
+      });
+    } finally {
+      setIsAdminAssigning(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="citizen-layout">
@@ -264,14 +359,14 @@ export default function ReportDetails() {
               <button
                 type="button"
                 className="btn-form-submit state-action-btn"
-                onClick={() => navigate('/citizen/reports')}
+                onClick={() => navigate(reportsListRoute)}
               >
-                &larr; Back to My Reports
+                &larr; Back to {isAdmin ? 'All Reports' : 'My Reports'}
               </button>
               <button
                 type="button"
                 className="btn-form-cancel state-action-btn"
-                onClick={() => navigate('/citizen')}
+                onClick={() => navigate(dashboardRoute)}
               >
                 Dashboard
               </button>
@@ -303,12 +398,12 @@ export default function ReportDetails() {
         <header className="report-details-header">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <nav className="details-breadcrumb-nav" aria-label="Breadcrumb">
-              <Link to="/citizen" className="btn-back-crumb">
-                Dashboard
+              <Link to={dashboardRoute} className="btn-back-crumb">
+                {isAdmin ? 'Admin Console' : 'Dashboard'}
               </Link>
               <span aria-hidden="true">/</span>
-              <Link to="/citizen/reports" className="btn-back-crumb">
-                My Reports
+              <Link to={reportsListRoute} className="btn-back-crumb">
+                {isAdmin ? 'All Reports' : 'My Reports'}
               </Link>
               <span aria-hidden="true">/</span>
               <span aria-current="page">Incident #{report.id.slice(0, 8)}</span>
@@ -318,15 +413,15 @@ export default function ReportDetails() {
               <button
                 type="button"
                 className="btn-form-cancel"
-                onClick={() => navigate('/citizen/reports')}
+                onClick={() => navigate(reportsListRoute)}
                 style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
               >
-                &larr; All Reports
+                &larr; {isAdmin ? 'All Reports' : 'My Reports'}
               </button>
               <button
                 type="button"
                 className="btn-form-cancel"
-                onClick={() => navigate('/citizen')}
+                onClick={() => navigate(dashboardRoute)}
                 style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
               >
                 Dashboard
@@ -468,6 +563,103 @@ export default function ReportDetails() {
 
           {/* Right Column: Community Support, Location, Dispatch & Metadata */}
           <aside className="report-details-sidebar" aria-label="Incident metadata">
+            {/* Admin Dispatch Management Card (Visible for role = admin) */}
+            {isAdmin && (
+              <div className="details-section-card" aria-labelledby="admin-dispatch-heading">
+                <h2 id="admin-dispatch-heading">
+                  <span aria-hidden="true">🛡️</span> Admin Dispatch Action
+                </h2>
+
+                <div className="sidebar-meta-list">
+                  <div className="sidebar-meta-row">
+                    <span className="sidebar-meta-label">Incident Status:</span>
+                    <ReportStatusBadge status={report.status} size="small" />
+                  </div>
+
+                  <div className="sidebar-meta-row">
+                    <span className="sidebar-meta-label">Assigned Worker:</span>
+                    <span className="sidebar-meta-value">
+                      {assignedWorker ? (
+                        <span className="worker-badge-pill">
+                          <span aria-hidden="true">👤</span> {assignedWorker.full_name}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#d97706', fontWeight: 600 }}>
+                          Unassigned
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Worker Assignment Form for Reported status */}
+                {report.status === 'Reported' ? (
+                  <form onSubmit={handleAdminAssignWorker} style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.85rem' }}>
+                    <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
+                      <label htmlFor="admin-worker-select" className="filter-label">Assign Field Worker</label>
+                      <select
+                        id="admin-worker-select"
+                        className="filter-select"
+                        value={adminSelectedWorkerId}
+                        onChange={(e) => setAdminSelectedWorkerId(e.target.value)}
+                        disabled={isAdminAssigning}
+                      >
+                        <option value="">Select a worker...</option>
+                        {availableWorkers.map((w) => (
+                          <option key={w.id} value={w.id} disabled={w.is_active === false}>
+                            {w.full_name} {w.is_active === false ? '(Off-Duty)' : '(Available)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
+                      <label htmlFor="admin-notes" className="filter-label">Dispatch Notes (Optional)</label>
+                      <input
+                        type="text"
+                        id="admin-notes"
+                        className="filter-select"
+                        placeholder="Instructions for worker..."
+                        value={adminAssignNotes}
+                        onChange={(e) => setAdminAssignNotes(e.target.value)}
+                        disabled={isAdminAssigning}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn-form-submit"
+                      disabled={!adminSelectedWorkerId || isAdminAssigning}
+                      style={{ width: '100%', padding: '0.65rem', fontSize: '0.875rem' }}
+                    >
+                      {isAdminAssigning ? 'Assigning...' : 'Confirm Worker Assignment'}
+                    </button>
+
+                    {adminAssignFeedback && (
+                      <div
+                        style={{
+                          marginTop: '0.75rem',
+                          padding: '0.65rem',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          background: adminAssignFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                          color: adminAssignFeedback.type === 'success' ? '#047857' : '#dc2626',
+                          border: `1px solid ${adminAssignFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                        }}
+                        role="alert"
+                      >
+                        {adminAssignFeedback.message}
+                      </div>
+                    )}
+                  </form>
+                ) : (
+                  <p style={{ margin: '0.85rem 0 0 0', fontSize: '0.8rem', color: 'var(--text)', borderTop: '1px solid var(--border)', paddingTop: '0.65rem' }}>
+                    Incident is in <strong>{report.status}</strong> stage. Direct assignment is only permitted for reports in <em>Reported</em> status per business rules.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Community Support Card */}
             <div className="details-section-card" aria-labelledby="support-heading">
               <h2 id="support-heading">
@@ -491,7 +683,11 @@ export default function ReportDetails() {
                 <div className="sidebar-meta-row">
                   <span className="sidebar-meta-label">Your Status:</span>
                   <span className="sidebar-meta-value">
-                    {isCreator ? (
+                    {isAdmin ? (
+                      <span className="admin-badge-pill" style={{ fontSize: '0.725rem' }}>
+                        Administrator
+                      </span>
+                    ) : isCreator ? (
                       <span className="worker-badge-pill" style={{ background: 'rgba(5, 150, 105, 0.1)', color: '#059669', borderColor: 'rgba(5, 150, 105, 0.25)' }}>
                         <span aria-hidden="true">✍️</span> Submitter / Creator
                       </span>
@@ -506,8 +702,8 @@ export default function ReportDetails() {
                 </div>
               </div>
 
-              {/* Support Action Area */}
-              {!isCreator && isActive && (
+              {/* Citizen Support Action Area (Hidden for Admin) */}
+              {!isAdmin && !isCreator && isActive && (
                 <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
                   {isSupporting ? (
                     <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', fontSize: '0.85rem', color: '#047857' }}>
@@ -540,7 +736,6 @@ export default function ReportDetails() {
                     </div>
                   )}
 
-                  {/* Support action feedback alert */}
                   {supportFeedback && (
                     <div
                       style={{
@@ -581,10 +776,18 @@ export default function ReportDetails() {
                       : 'Unavailable'}
                   </span>
                 </div>
+                {reportingCitizen && (
+                  <div className="sidebar-meta-row">
+                    <span className="sidebar-meta-label">Reported by:</span>
+                    <span className="sidebar-meta-value">
+                      {reportingCitizen.full_name}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Assignment Card */}
+            {/* Municipal Dispatch Card */}
             <div className="details-section-card">
               <h2>
                 <span aria-hidden="true">👷</span> Municipal Dispatch
