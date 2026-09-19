@@ -254,6 +254,13 @@ export default function AdminDashboard() {
               >
                 <span>👷</span> Manage Field Workers
               </Link>
+              <Link
+                to="/admin/schedules"
+                className="btn-form-cancel"
+                style={{ padding: '0.55rem 1rem', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <span>📅</span> Collection Schedules
+              </Link>
               <button
                 type="button"
                 className="btn-form-cancel"

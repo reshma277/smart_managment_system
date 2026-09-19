@@ -164,6 +164,12 @@ export default function UserNavbar() {
             >
               <span>Worker Management</span>
             </NavLink>
+            <NavLink
+              to="/admin/schedules"
+              className={({ isActive }) => `user-nav-link ${isActive ? 'active' : ''}`}
+            >
+              <span>Collection Schedules</span>
+            </NavLink>
           </nav>
         )}
       </div>
