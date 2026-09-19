@@ -20,6 +20,7 @@ import WorkerReportDetails from './pages/worker/WorkerReportDetails';
 import WorkerNotifications from './pages/worker/WorkerNotifications';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminReports from './pages/admin/AdminReports';
+import AdminWorkers from './pages/admin/AdminWorkers';
 
 import './styles/auth.css';
 
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/reports" element={<AdminReports />} />
             <Route path="/admin/reports/:reportId" element={<ReportDetails />} />
+            <Route path="/admin/workers" element={<AdminWorkers />} />
           </Route>
         </Route>
 

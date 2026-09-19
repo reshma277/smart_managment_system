@@ -247,6 +247,13 @@ export default function AdminDashboard() {
               >
                 <span>📋</span> Manage All Reports
               </Link>
+              <Link
+                to="/admin/workers"
+                className="btn-form-cancel"
+                style={{ padding: '0.55rem 1rem', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <span>👷</span> Manage Field Workers
+              </Link>
               <button
                 type="button"
                 className="btn-form-cancel"
