@@ -73,6 +73,11 @@ export default function WorkerReportDetails() {
           return;
         }
 
+        if (data.assigned_worker_id !== user.id) {
+          if (isMounted) setError('Access restricted: You are not assigned to this municipal dispatch task.');
+          return;
+        }
+
         if (isMounted) {
           setReport(data);
           if (data.status === 'In Progress') {
