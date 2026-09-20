@@ -4,7 +4,6 @@ import UserNavbar from '../../components/auth/UserNavbar';
 import ReportStatusBadge from '../../components/citizen/ReportStatusBadge';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
-import '../../styles/citizen-tracking.css';
 
 export default function AdminWorkers() {
   const navigate = useNavigate();
@@ -38,7 +37,6 @@ export default function AdminWorkers() {
 
     async function fetchWorkersAndWorkloads() {
       try {
-        // 1. Fetch all workers from profiles
         const { data: workerData, error: workerErr } = await supabase
           .from('profiles')
           .select('id, email, full_name, phone_number, role, avatar_url, is_active, last_location_updated_at, created_at')
@@ -51,7 +49,6 @@ export default function AdminWorkers() {
           return;
         }
 
-        // 2. Fetch all reports to aggregate workloads
         const { data: reportData, error: reportErr } = await supabase
           .from('reports')
           .select('id, title, status, severity, garbage_type, address, assigned_worker_id, created_at, updated_at')
@@ -77,16 +74,11 @@ export default function AdminWorkers() {
 
     fetchWorkersAndWorkloads();
 
-    // Supabase Realtime subscription for workers and reports
     const profilesChannel = supabase
       .channel('admin-workers-profiles')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'profiles',
-        },
+        { event: '*', schema: 'public', table: 'profiles' },
         () => {
           fetchWorkersAndWorkloads();
         }
@@ -97,11 +89,7 @@ export default function AdminWorkers() {
       .channel('admin-workers-reports')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'reports',
-        },
+        { event: '*', schema: 'public', table: 'reports' },
         () => {
           fetchWorkersAndWorkloads();
         }
@@ -130,7 +118,6 @@ export default function AdminWorkers() {
     setActionFeedback(null);
 
     try {
-      // Safely update ONLY is_active, preserving the role intact per security guidelines
       const { error: updateErr } = await supabase
         .from('profiles')
         .update({ is_active: newStatus })
@@ -194,7 +181,6 @@ export default function AdminWorkers() {
 
   // Filtered workers list
   const filteredWorkers = enrichedWorkers.filter((w) => {
-    // Search term filter
     if (searchTerm.trim()) {
       const query = searchTerm.toLowerCase();
       const matchName = (w.full_name || '').toLowerCase().includes(query);
@@ -204,22 +190,20 @@ export default function AdminWorkers() {
       if (!matchName && !matchEmail && !matchId && !matchPhone) return false;
     }
 
-    // Status filter
     if (statusFilter === 'active' && w.is_active === false) return false;
     if (statusFilter === 'inactive' && w.is_active !== false) return false;
 
-    // Workload filter
     if (workloadFilter === 'busy' && w.activeWorkload === 0) return false;
     if (workloadFilter === 'available' && w.activeWorkload > 0) return false;
 
     return true;
   });
 
-  // Compute summary stats
+  // Summary stats
   const totalWorkersCount = workers.length;
   const activeWorkersCount = workers.filter((w) => w.is_active !== false).length;
-  const inactiveWorkersCount = workers.filter((w) => w.is_active === false).length;
-  const totalActiveTasksAcrossWorkers = enrichedWorkers.reduce((acc, w) => acc + w.activeWorkload, 0);
+  const totalAssignedTasks = enrichedWorkers.reduce((acc, w) => acc + w.assignedCount + w.acceptedCount, 0);
+  const totalInProgressTasks = enrichedWorkers.reduce((acc, w) => acc + w.inProgressCount, 0);
 
   const selectedWorker = selectedWorkerId
     ? enrichedWorkers.find((w) => w.id === selectedWorkerId)
@@ -230,49 +214,47 @@ export default function AdminWorkers() {
       <UserNavbar />
 
       <main className="admin-main" role="main">
-        {/* Header Breadcrumb & Title */}
-        <header className="tracking-header">
-          <div className="tracking-header-text">
-            <nav className="details-breadcrumb-nav" aria-label="Breadcrumb" style={{ marginBottom: '0.5rem' }}>
-              <Link to="/admin" className="btn-back-crumb">
-                &larr; Admin Console
-              </Link>
-            </nav>
-            <h1>Municipal Field Staff Management</h1>
-            <p>Monitor field worker roster, duty availability, assigned workloads, and active dispatches.</p>
+        {/* HEADER */}
+        <header className="admin-page-header">
+          <div className="admin-header-content">
+            <div className="admin-eyebrow-row">
+              <span className="admin-eyebrow">FIELD WORKERS</span>
+              <span className="admin-role-badge">
+                <span>{totalWorkersCount} Registered Personnel</span>
+              </span>
+            </div>
+            <h1 className="admin-title">Worker Management</h1>
+            <p className="admin-subtitle">
+              Monitor workforce availability and current cleanup workload.
+            </p>
           </div>
 
-          <div className="tracking-actions-bar">
-            <Link
-              to="/admin/reports"
-              className="btn-form-cancel"
-              style={{ padding: '0.6rem 1.1rem', fontSize: '0.875rem', textDecoration: 'none' }}
-            >
-              Manage Incidents &rarr;
+          <div className="admin-header-actions">
+            <Link to="/admin/reports" className="btn-admin-secondary">
+              &larr; Manage Reports
             </Link>
             <button
               type="button"
-              className="btn-form-cancel"
+              className="btn-admin-secondary btn-admin-sm"
               onClick={handleRetry}
               disabled={loading}
-              style={{ padding: '0.6rem 1rem', fontSize: '0.875rem' }}
-              title="Refresh staff data"
             >
-              <span>🔄</span> Refresh
+              {loading ? 'Refreshing...' : '🔄 Refresh'}
             </button>
           </div>
         </header>
 
-        {/* Global Feedback Banner */}
+        {/* FEEDBACK BANNER */}
         {actionFeedback && (
           <div
             style={{
               padding: '0.85rem 1.25rem',
-              borderRadius: '8px',
+              borderRadius: '10px',
               fontSize: '0.875rem',
-              background: actionFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-              color: actionFeedback.type === 'success' ? '#047857' : '#dc2626',
-              border: `1px solid ${actionFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              fontWeight: 600,
+              background: actionFeedback.type === 'success' ? 'rgba(22, 163, 74, 0.1)' : 'rgba(220, 38, 38, 0.1)',
+              color: actionFeedback.type === 'success' ? '#16A34A' : '#DC2626',
+              border: `1px solid ${actionFeedback.type === 'success' ? 'rgba(22, 163, 74, 0.3)' : 'rgba(220, 38, 38, 0.3)'}`,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -290,330 +272,204 @@ export default function AdminWorkers() {
           </div>
         )}
 
-        {/* 1. Worker Operations Overview Cards */}
-        <section aria-labelledby="staff-metrics-heading">
-          <h2 id="staff-metrics-heading" className="sr-only">Staff Statistics</h2>
-          <div className="admin-stats-grid">
-            <div className="admin-stat-card">
-              <div className="admin-stat-card-header">
-                <span className="admin-stat-card-title">Total Staff Roster</span>
-                <span className="admin-stat-card-icon" aria-hidden="true">👷</span>
+        {/* 1. SUMMARY METRICS */}
+        <section aria-label="Worker Fleet Metrics">
+          <div className="admin-kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <article className="admin-kpi-card">
+              <div className="admin-kpi-header">
+                <span className="admin-kpi-label">Total Workers</span>
+                <span className="admin-kpi-indicator primary" aria-hidden="true" />
               </div>
-              <p className="admin-stat-card-value">{totalWorkersCount}</p>
-              <p className="admin-stat-card-desc">Registered municipal field personnel</p>
-            </div>
+              <p className="admin-kpi-val">{totalWorkersCount}</p>
+              <p className="admin-kpi-sub">Registered field personnel</p>
+            </article>
 
-            <div className="admin-stat-card">
-              <div className="admin-stat-card-header">
-                <span className="admin-stat-card-title">Active / On-Duty</span>
-                <span className="admin-stat-card-icon" aria-hidden="true">🟢</span>
+            <article className="admin-kpi-card">
+              <div className="admin-kpi-header">
+                <span className="admin-kpi-label">Active / On Duty</span>
+                <span className="admin-kpi-indicator success" aria-hidden="true" />
               </div>
-              <p className="admin-stat-card-value" style={{ color: '#059669' }}>
-                {activeWorkersCount}
-              </p>
-              <p className="admin-stat-card-desc">Available for incident dispatch</p>
-            </div>
+              <p className="admin-kpi-val">{activeWorkersCount}</p>
+              <p className="admin-kpi-sub">Available for field dispatch</p>
+            </article>
 
-            <div className="admin-stat-card">
-              <div className="admin-stat-card-header">
-                <span className="admin-stat-card-title">Inactive / Off-Duty</span>
-                <span className="admin-stat-card-icon" aria-hidden="true">⚪</span>
+            <article className="admin-kpi-card">
+              <div className="admin-kpi-header">
+                <span className="admin-kpi-label">Assigned Tasks</span>
+                <span className="admin-kpi-indicator warning" aria-hidden="true" />
               </div>
-              <p className="admin-stat-card-value" style={{ color: '#6b7280' }}>
-                {inactiveWorkersCount}
-              </p>
-              <p className="admin-stat-card-desc">Paused or off-shift workers</p>
-            </div>
+              <p className="admin-kpi-val">{totalAssignedTasks}</p>
+              <p className="admin-kpi-sub">Pending start or en-route</p>
+            </article>
 
-            <div className="admin-stat-card">
-              <div className="admin-stat-card-header">
-                <span className="admin-stat-card-title">Active Operations</span>
-                <span className="admin-stat-card-icon" aria-hidden="true">⚡</span>
+            <article className="admin-kpi-card">
+              <div className="admin-kpi-header">
+                <span className="admin-kpi-label">In Progress</span>
+                <span className="admin-kpi-indicator info" aria-hidden="true" />
               </div>
-              <p className="admin-stat-card-value" style={{ color: '#d97706' }}>
-                {totalActiveTasksAcrossWorkers}
-              </p>
-              <p className="admin-stat-card-desc">Assigned, accepted & in-progress</p>
-            </div>
+              <p className="admin-kpi-val">{totalInProgressTasks}</p>
+              <p className="admin-kpi-sub">Active remediation on site</p>
+            </article>
           </div>
         </section>
 
-        {/* 2. Toolbar: Search & Filters */}
-        <section className="admin-toolbar-card" aria-label="Staff filters">
+        {/* 2. TOOLBAR: SEARCH & FILTERS */}
+        <section className="admin-toolbar-card" aria-label="Worker filter controls">
           <div className="admin-search-row">
-            <div className="admin-search-input-wrap">
+            <div className="admin-search-wrap">
               <span className="admin-search-icon" aria-hidden="true">🔍</span>
               <input
                 type="search"
                 className="admin-search-input"
-                placeholder="Search staff by name, email, phone, or staff ID..."
+                placeholder="Search staff by name, email, phone, or ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                aria-label="Search field staff"
+                aria-label="Search worker roster"
               />
             </div>
 
-            {searchTerm && (
-              <button
-                type="button"
-                className="btn-form-cancel"
-                onClick={() => setSearchTerm('')}
-                style={{ padding: '0.6rem 0.9rem', fontSize: '0.85rem' }}
-              >
-                Clear Search
-              </button>
-            )}
-          </div>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div className="admin-filter-field" style={{ minWidth: '150px' }}>
+                <select
+                  className="admin-filter-select"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  aria-label="Filter by duty status"
+                >
+                  <option value="all">All Duty Statuses</option>
+                  <option value="active">Active (On-Duty)</option>
+                  <option value="inactive">Inactive (Off-Duty)</option>
+                </select>
+              </div>
 
-          <div className="admin-filters-grid">
-            <div className="filter-group">
-              <label htmlFor="filter-worker-status" className="filter-label">Availability Status</label>
-              <select
-                id="filter-worker-status"
-                className="filter-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="all">All Staff</option>
-                <option value="active">Active (On-Duty)</option>
-                <option value="inactive">Inactive (Off-Duty)</option>
-              </select>
-            </div>
+              <div className="admin-filter-field" style={{ minWidth: '150px' }}>
+                <select
+                  className="admin-filter-select"
+                  value={workloadFilter}
+                  onChange={(e) => setWorkloadFilter(e.target.value)}
+                  aria-label="Filter by workload"
+                >
+                  <option value="all">All Workloads</option>
+                  <option value="busy">Busy (Active Tasks &gt; 0)</option>
+                  <option value="available">Available (0 Tasks)</option>
+                </select>
+              </div>
 
-            <div className="filter-group">
-              <label htmlFor="filter-worker-workload" className="filter-label">Workload Filter</label>
-              <select
-                id="filter-worker-workload"
-                className="filter-select"
-                value={workloadFilter}
-                onChange={(e) => setWorkloadFilter(e.target.value)}
-              >
-                <option value="all">All Workloads</option>
-                <option value="busy">Active Dispatches (&gt;0 tasks)</option>
-                <option value="available">Idle / Free (0 tasks)</option>
-              </select>
-            </div>
-
-            <div className="filter-group" style={{ justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn-form-cancel"
-                onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('all');
-                  setWorkloadFilter('all');
-                }}
-                style={{ padding: '0.55rem', fontSize: '0.825rem' }}
-              >
-                Reset Filters
-              </button>
+              {(searchTerm || statusFilter !== 'all' || workloadFilter !== 'all') && (
+                <button
+                  type="button"
+                  className="btn-admin-secondary btn-admin-sm"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setStatusFilter('all');
+                    setWorkloadFilter('all');
+                  }}
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Loading State */}
+        {/* LOADING & ERROR */}
         {loading && (
-          <div className="state-box" aria-live="polite">
+          <div className="admin-state-box" aria-live="polite">
             <div className="auth-spinner" style={{ width: '32px', height: '32px' }} />
-            <p className="state-title">Loading field worker roster...</p>
-            <p className="state-desc">Synchronizing profiles and active incident dispatches.</p>
+            <p className="admin-state-title">Loading Field Roster...</p>
+            <p className="admin-state-desc">Aggregating field staff accounts and active dispatch schedules.</p>
           </div>
         )}
 
-        {/* Error State */}
         {!loading && error && (
-          <div className="state-box" role="alert">
-            <span className="state-icon" aria-hidden="true">⚠️</span>
-            <p className="state-title">Error Loading Staff Roster</p>
-            <p className="state-desc">{error}</p>
-            <button
-              type="button"
-              className="btn-form-cancel state-action-btn"
-              onClick={handleRetry}
-            >
+          <div className="admin-state-box" role="alert">
+            <span className="admin-state-icon" aria-hidden="true">⚠️</span>
+            <p className="admin-state-title">Unable to Load Worker Roster</p>
+            <p className="admin-state-desc">{error}</p>
+            <button type="button" className="btn-admin-primary" onClick={handleRetry}>
               Try Again
             </button>
           </div>
         )}
 
-        {/* Empty State: No workers at all */}
-        {!loading && !error && workers.length === 0 && (
-          <div className="state-box">
-            <span className="state-icon" aria-hidden="true">👷</span>
-            <h2 className="state-title">No Field Workers Registered</h2>
-            <p className="state-desc">When users register or are designated with the worker role, they will appear here.</p>
+        {/* WORKER ROSTER TABLE */}
+        {!loading && !error && filteredWorkers.length === 0 && (
+          <div className="admin-state-box">
+            <span className="admin-state-icon" aria-hidden="true">👷</span>
+            <h2 className="admin-state-title">No Workers Found</h2>
+            <p className="admin-state-desc">
+              {workers.length === 0
+                ? 'No workers are currently registered in the municipal database.'
+                : 'No staff match the current search or workload filters.'}
+            </p>
           </div>
         )}
 
-        {/* Filtered Empty State */}
-        {!loading && !error && workers.length > 0 && filteredWorkers.length === 0 && (
-          <div className="state-box">
-            <span className="state-icon" aria-hidden="true">🔍</span>
-            <p className="state-title">No staff members match your criteria</p>
-            <p className="state-desc">Try clearing your search query or adjusting status/workload filters.</p>
-            <button
-              type="button"
-              className="btn-form-cancel state-action-btn"
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('all');
-                setWorkloadFilter('all');
-              }}
-            >
-              Reset Filters
-            </button>
-          </div>
-        )}
-
-        {/* Workers Table */}
         {!loading && !error && filteredWorkers.length > 0 && (
-          <div className="admin-table-card">
+          <section className="admin-table-card" aria-label="Worker Roster Table">
             <div className="admin-table-wrapper">
-              <table className="admin-table" aria-label="Field Staff Roster Table">
+              <table className="admin-table">
                 <thead>
                   <tr>
-                    <th scope="col">Staff Member</th>
-                    <th scope="col">Contact</th>
+                    <th scope="col">Worker Name</th>
                     <th scope="col">Duty Status</th>
-                    <th scope="col">Active Tasks</th>
-                    <th scope="col">Lifecycle Breakdown</th>
-                    <th scope="col">Resolved</th>
+                    <th scope="col">Current Workload</th>
+                    <th scope="col">Assigned Tasks</th>
+                    <th scope="col">In-Progress Tasks</th>
                     <th scope="col" style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredWorkers.map((worker) => {
-                    const isSelected = selectedWorkerId === worker.id;
                     const isOnDuty = worker.is_active !== false;
+                    const isSelected = selectedWorkerId === worker.id;
                     const isToggling = togglingWorkerId === worker.id;
 
                     return (
-                      <tr
-                        key={worker.id}
-                        style={{
-                          background: isSelected ? 'rgba(170, 59, 255, 0.05)' : undefined,
-                        }}
-                      >
+                      <tr key={worker.id}>
                         <td>
-                          <div className="report-title-cell">
-                            <span className="report-title-text" style={{ fontSize: '0.95rem' }}>
-                              {worker.full_name}
-                            </span>
-                            <span className="report-address-sub" title={worker.id}>
-                              ID: <code>#{worker.id.slice(0, 8)}</code>
-                            </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                            <span style={{ fontWeight: 800, color: 'var(--admin-text-h)' }}>{worker.full_name}</span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--admin-text-body)' }}>{worker.email}</span>
                           </div>
                         </td>
                         <td>
-                          <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                            <span style={{ color: 'var(--text-h)' }}>{worker.email}</span>
-                            {worker.phone_number && (
-                              <span style={{ color: 'var(--text)', opacity: 0.8 }}>
-                                📞 {worker.phone_number}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <span
-                            className="worker-badge-pill"
-                            style={{
-                              fontSize: '0.75rem',
-                              background: isOnDuty ? 'rgba(16, 185, 129, 0.1)' : 'rgba(107, 114, 128, 0.1)',
-                              color: isOnDuty ? '#059669' : '#6b7280',
-                              borderColor: isOnDuty ? 'rgba(16, 185, 129, 0.35)' : 'rgba(107, 114, 128, 0.35)',
-                            }}
-                          >
-                            <span aria-hidden="true">{isOnDuty ? '🟢' : '⚪'}</span>
-                            {isOnDuty ? 'Active (On-Duty)' : 'Inactive (Off-Duty)'}
+                          <span className={`duty-pill ${isOnDuty ? 'on-duty' : 'off-duty'}`}>
+                            {isOnDuty ? '🟢 Active (On-Duty)' : '⚪ Inactive (Off-Duty)'}
                           </span>
                         </td>
                         <td>
-                          <span
-                            style={{
-                              fontWeight: 700,
-                              fontSize: '0.95rem',
-                              color: worker.activeWorkload > 0 ? '#d97706' : 'var(--text)',
-                            }}
-                          >
-                            {worker.activeWorkload} {worker.activeWorkload === 1 ? 'task' : 'tasks'}
+                          <span style={{ fontWeight: 700, color: worker.activeWorkload > 0 ? 'var(--admin-text-h)' : 'var(--admin-text-body)' }}>
+                            {worker.activeWorkload} active
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span
-                              style={{
-                                fontSize: '0.725rem',
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '4px',
-                                background: 'rgba(59, 130, 246, 0.1)',
-                                color: '#2563eb',
-                                border: '1px solid rgba(59, 130, 246, 0.25)',
-                              }}
-                              title="Assigned (Awaiting Worker)"
-                            >
-                              Assigned: {worker.assignedCount}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '0.725rem',
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '4px',
-                                background: 'rgba(217, 119, 6, 0.1)',
-                                color: '#b45309',
-                                border: '1px solid rgba(217, 119, 6, 0.25)',
-                              }}
-                              title="Accepted (En Route)"
-                            >
-                              Accepted: {worker.acceptedCount}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '0.725rem',
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '4px',
-                                background: 'rgba(168, 85, 247, 0.1)',
-                                color: '#7e22ce',
-                                border: '1px solid rgba(168, 85, 247, 0.25)',
-                              }}
-                              title="In Progress (Active Cleanup)"
-                            >
-                              In Progress: {worker.inProgressCount}
-                            </span>
-                          </div>
+                          <span style={{ fontSize: '0.85rem' }}>{worker.assignedCount + worker.acceptedCount}</span>
                         </td>
                         <td>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#059669' }}>
-                            {worker.resolvedCount}
+                          <span style={{ fontSize: '0.85rem', fontWeight: worker.inProgressCount > 0 ? 700 : 400, color: worker.inProgressCount > 0 ? 'var(--admin-warning)' : 'inherit' }}>
+                            {worker.inProgressCount}
                           </span>
                         </td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'inline-flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                             <button
                               type="button"
-                              className="btn-assign-row"
+                              className="btn-admin-secondary btn-admin-sm"
                               onClick={() => setSelectedWorkerId(isSelected ? null : worker.id)}
-                              style={{
-                                background: isSelected ? '#aa3bff' : undefined,
-                                color: isSelected ? '#ffffff' : undefined,
-                              }}
-                              title="View assigned incident dispatches"
                             >
-                              {isSelected ? 'Hide Tasks' : `Tasks (${worker.totalCount})`}
+                              {isSelected ? 'Close Tasks' : `Tasks (${worker.totalCount})`}
                             </button>
 
                             <button
                               type="button"
-                              className="btn-form-cancel"
+                              className="btn-admin-secondary btn-admin-sm"
                               onClick={() => handleToggleWorkerStatus(worker)}
                               disabled={isToggling}
                               style={{
-                                padding: '0.35rem 0.65rem',
-                                fontSize: '0.775rem',
-                                color: isOnDuty ? '#dc2626' : '#059669',
-                                borderColor: isOnDuty ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)',
+                                color: isOnDuty ? '#DC2626' : '#16A34A',
+                                borderColor: isOnDuty ? 'rgba(220, 38, 38, 0.3)' : 'rgba(22, 163, 74, 0.3)',
                               }}
-                              title={isOnDuty ? 'Set worker as off-duty' : 'Set worker as on-duty'}
                             >
                               {isToggling ? 'Updating...' : isOnDuty ? 'Set Off-Duty' : 'Set On-Duty'}
                             </button>
@@ -625,60 +481,48 @@ export default function AdminWorkers() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </section>
         )}
 
-        {/* 3. Expandable / Detailed Worker Task Drawer */}
+        {/* 3. STREAMLINED WORKER TASK DRAWER */}
         {selectedWorker && (
-          <section
-            className="details-section-card"
-            style={{ marginTop: '1.5rem', animation: 'fadeIn 0.2s ease-out' }}
-            aria-labelledby="worker-detail-heading"
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+          <section className="admin-card" aria-labelledby="worker-task-drawer-heading">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
               <div>
-                <h2 id="worker-detail-heading" style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-h)' }}>
-                  <span aria-hidden="true">📋</span> Assigned Tasks: {selectedWorker.full_name}
+                <h2 id="worker-task-drawer-heading" style={{ margin: 0, fontSize: '1.15rem', color: 'var(--admin-text-h)' }}>
+                  Assigned Dispatches: {selectedWorker.full_name}
                 </h2>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.825rem', color: 'var(--text)' }}>
-                  Total historical and active reports assigned: <strong>{selectedWorker.totalCount}</strong> ({selectedWorker.activeWorkload} active)
+                <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.825rem', color: 'var(--admin-text-body)' }}>
+                  Showing {selectedWorker.assignedReports.length} total tasks ({selectedWorker.activeWorkload} active)
                 </p>
               </div>
 
               <button
                 type="button"
-                className="btn-form-cancel"
+                className="btn-admin-secondary btn-admin-sm"
                 onClick={() => setSelectedWorkerId(null)}
-                style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
               >
-                Close Task View &times;
+                Close Tasks &times;
               </button>
             </div>
 
             {selectedWorker.assignedReports.length === 0 ? (
-              <div className="state-box" style={{ padding: '2rem 1rem' }}>
-                <span className="state-icon" aria-hidden="true">🎉</span>
-                <p className="state-title">No Incident Reports Currently Assigned</p>
-                <p className="state-desc">This worker has zero dispatches on their schedule.</p>
-                <Link
-                  to="/admin/reports"
-                  className="btn-form-submit state-action-btn"
-                  style={{ textDecoration: 'none', display: 'inline-block' }}
-                >
-                  Assign Incidents in Reports Console
-                </Link>
+              <div className="admin-state-box" style={{ padding: '2rem 1rem' }}>
+                <span className="admin-state-icon" aria-hidden="true">✓</span>
+                <p className="admin-state-title">No Incident Reports Assigned</p>
+                <p className="admin-state-desc">This operator currently has zero assigned dispatches.</p>
               </div>
             ) : (
-              <div className="admin-table-wrapper" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                <table className="admin-table" aria-label="Worker Assigned Reports">
+              <div className="admin-table-wrapper" style={{ maxHeight: '380px', overflowY: 'auto' }}>
+                <table className="admin-table">
                   <thead>
                     <tr>
-                      <th scope="col">Reference</th>
-                      <th scope="col">Title & Location</th>
+                      <th scope="col">ID</th>
+                      <th scope="col">Title &amp; Address</th>
                       <th scope="col">Severity</th>
                       <th scope="col">Status</th>
                       <th scope="col">Last Updated</th>
-                      <th scope="col" style={{ textAlign: 'right' }}>Actions</th>
+                      <th scope="col" style={{ textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -686,44 +530,39 @@ export default function AdminWorkers() {
                       const updatedDate = new Date(r.updated_at || r.created_at).toLocaleDateString(undefined, {
                         month: 'short',
                         day: 'numeric',
-                        year: 'numeric',
                       });
 
                       return (
                         <tr
                           key={r.id}
                           onClick={() => navigate(`/admin/reports/${r.id}`)}
-                          title={`View incident ${r.id}`}
+                          style={{ cursor: 'pointer' }}
                         >
                           <td>
-                            <span className="report-card-ref-badge" title={r.id}>
-                              #{r.id.slice(0, 8)}
-                            </span>
+                            <span className="ref-id-badge">#{r.id.slice(0, 8)}</span>
                           </td>
                           <td>
-                            <div className="report-title-cell">
-                              <span className="report-title-text">{r.title}</span>
-                              <span className="report-address-sub" title={r.address}>
-                                📍 {r.address || 'GPS Coordinates Recorded'}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                              <span style={{ fontWeight: 700, color: 'var(--admin-text-h)' }}>{r.title}</span>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--admin-text-body)' }}>
+                                📍 {r.address || 'Coordinates Recorded'}
                               </span>
                             </div>
                           </td>
                           <td>
-                            <span className={`severity-badge severity-${r.severity}`}>
-                              {r.severity}
+                            <span className={`admin-severity-badge severity-${(r.severity || 'medium').toLowerCase()}`}>
+                              {r.severity?.toUpperCase() || 'MEDIUM'}
                             </span>
                           </td>
                           <td>
                             <ReportStatusBadge status={r.status} size="small" />
                           </td>
                           <td>
-                            <time dateTime={r.updated_at || r.created_at} style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                              {updatedDate}
-                            </time>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--admin-text-body)' }}>{updatedDate}</span>
                           </td>
                           <td style={{ textAlign: 'right' }}>
-                            <span className="report-card-link-text" style={{ fontSize: '0.8rem' }}>
-                              Inspect &rarr;
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--admin-primary)' }}>
+                              INSPECT &rarr;
                             </span>
                           </td>
                         </tr>

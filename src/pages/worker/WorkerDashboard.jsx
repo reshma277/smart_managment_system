@@ -1,16 +1,35 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import UserNavbar from '../../components/auth/UserNavbar';
-import ReportStatusBadge from '../../components/citizen/ReportStatusBadge';
 import WorkerLocationWidget from '../../components/worker/WorkerLocationWidget';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import '../../styles/worker.css';
 import '../../styles/citizen-tracking.css';
+import '../../styles/worker.css';
+
+const GARBAGE_TYPE_LABELS = {
+  general: 'General Waste',
+  household: 'Household Waste',
+  commercial: 'Commercial Waste',
+  construction: 'Construction / Debris',
+  organic: 'Organic / Food Waste',
+  plastic: 'Plastic / Recyclable',
+  electronic: 'Electronic (E-waste)',
+  hazardous: 'Hazardous / Biohazard',
+  bulk: 'Bulk / Large Items',
+  other: 'Other / Mixed Waste',
+};
+
+const SEVERITY_WEIGHT = {
+  critical: 5,
+  urgent: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
 
 export default function WorkerDashboard() {
-  const navigate = useNavigate();
-  const { profile, user } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
 
   const [stats, setStats] = useState({
     assigned: 0,
@@ -21,13 +40,105 @@ export default function WorkerDashboard() {
     loading: true,
   });
 
-  const [activeTask, setActiveTask] = useState(null);
-  const [recentTasks, setRecentTasks] = useState([]);
+  const [priorityTask, setPriorityTask] = useState(null);
+  const [assignedTasks, setAssignedTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
-  const [signedThumbnails, setSignedThumbnails] = useState({});
+
+  // My Collection Schedules state
+  const [schedules, setSchedules] = useState([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(true);
+
+  // Duty status toggle state
+  const [overrideDuty, setOverrideDuty] = useState(null);
+  const [isTogglingDuty, setIsTogglingDuty] = useState(false);
+  const [dutyFeedback, setDutyFeedback] = useState(null);
+
+  const dutyStatus = overrideDuty !== null ? overrideDuty : (profile?.is_active !== false);
+
+  const handleToggleDuty = async () => {
+    if (isTogglingDuty) return;
+    const targetStatus = !dutyStatus;
+    setIsTogglingDuty(true);
+    setDutyFeedback(null);
+
+    try {
+      const { data, error } = await supabase.rpc('set_worker_duty_status', {
+        p_is_active: targetStatus,
+      });
+
+      if (error) {
+        console.error('set_worker_duty_status error:', error);
+        setDutyFeedback({
+          type: 'error',
+          message: error.message || 'Could not update duty status.',
+        });
+      } else if (data?.success === false) {
+        setDutyFeedback({
+          type: 'error',
+          message: data?.message || 'Duty status update was rejected.',
+        });
+      } else {
+        setOverrideDuty(targetStatus);
+        setDutyFeedback({
+          type: 'success',
+          message: targetStatus ? 'You are now ON DUTY (Available for dispatch)' : 'You are now OFF DUTY (No auto-dispatches)',
+        });
+        if (typeof refreshProfile === 'function') {
+          refreshProfile();
+        }
+        setTimeout(() => setDutyFeedback(null), 4000);
+      }
+    } catch (err) {
+      console.error('Duty toggle exception:', err);
+      setDutyFeedback({
+        type: 'error',
+        message: 'Network error updating duty status.',
+      });
+    } finally {
+      setIsTogglingDuty(false);
+    }
+  };
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || 'Field Worker';
-  const displayEmail = profile?.email || user?.email || '';
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const formatTime = (isoStr) => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+
+    if (isToday) {
+      return d.toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    }
+    return d.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  const formatScheduleDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   useEffect(() => {
     const workerId = user?.id;
@@ -37,7 +148,6 @@ export default function WorkerDashboard() {
 
     async function loadWorkerDashboard() {
       try {
-        // Query assigned tasks for this worker
         const { data, error } = await supabase
           .from('reports')
           .select('id, title, description, status, severity, garbage_type, address, photo_url, created_at, updated_at')
@@ -55,16 +165,30 @@ export default function WorkerDashboard() {
 
         const list = data || [];
 
-        // Compute counts
+        // Real counts
         const assignedCount = list.filter((r) => r.status === 'Assigned').length;
         const acceptedCount = list.filter((r) => r.status === 'Accepted').length;
         const inProgressCount = list.filter((r) => r.status === 'In Progress').length;
         const resolvedCount = list.filter((r) => r.status === 'Resolved').length;
 
-        // Find primary active task (in progress takes precedence, then accepted)
-        const currentActive = list.find((r) => r.status === 'In Progress') ||
-                              list.find((r) => r.status === 'Accepted') ||
-                              null;
+        // Unresolved tasks for priority selection
+        const unResolved = list.filter((r) => r.status !== 'Resolved');
+
+        let primary = unResolved.find((r) => r.status === 'In Progress') ||
+                      unResolved.find((r) => r.status === 'Accepted') ||
+                      null;
+
+        if (!primary && unResolved.length > 0) {
+          const sorted = [...unResolved].sort((a, b) => {
+            const rankA = SEVERITY_WEIGHT[a.severity?.toLowerCase()] || 0;
+            const rankB = SEVERITY_WEIGHT[b.severity?.toLowerCase()] || 0;
+            if (rankB !== rankA) return rankB - rankA;
+            return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+          });
+          primary = sorted[0];
+        }
+
+        const activeQueue = unResolved.length > 0 ? unResolved : list;
 
         if (isMounted) {
           setStats({
@@ -75,30 +199,9 @@ export default function WorkerDashboard() {
             total: list.length,
             loading: false,
           });
-          setActiveTask(currentActive);
-          setRecentTasks(list.slice(0, 6));
+          setPriorityTask(primary);
+          setAssignedTasks(activeQueue.slice(0, 6));
           setLoadingTasks(false);
-        }
-
-        // Resolve thumbnail URLs for top tasks
-        const photosToSign = list.slice(0, 6).map((r) => r.photo_url).filter(Boolean);
-        if (photosToSign.length > 0 && isMounted) {
-          const map = {};
-          await Promise.all(
-            photosToSign.map(async (path) => {
-              try {
-                const { data: signData } = await supabase.storage
-                  .from('report-photos')
-                  .createSignedUrl(path, 3600);
-                if (signData?.signedUrl) {
-                  map[path] = signData.signedUrl;
-                }
-              } catch (err) {
-                console.warn('Could not sign photo URL:', path, err);
-              }
-            })
-          );
-          if (isMounted) setSignedThumbnails(map);
         }
       } catch (err) {
         console.error('Exception loading worker dashboard:', err);
@@ -109,9 +212,30 @@ export default function WorkerDashboard() {
       }
     }
 
-    loadWorkerDashboard();
+    async function loadWorkerSchedules() {
+      try {
+        const { data, error: schedErr } = await supabase
+          .from('collection_schedules')
+          .select('id, title, zone_name, frequency, scheduled_date, scheduled_start_time, scheduled_end_time, status, notes')
+          .eq('assigned_worker_id', workerId)
+          .neq('status', 'cancelled')
+          .order('scheduled_date', { ascending: true })
+          .order('scheduled_start_time', { ascending: true })
+          .limit(4);
 
-    // Subscribe to realtime changes on reports assigned to this worker
+        if (!schedErr && isMounted) {
+          setSchedules(data || []);
+        }
+      } catch (err) {
+        console.warn('Could not load worker schedules:', err);
+      } finally {
+        if (isMounted) setLoadingSchedules(false);
+      }
+    }
+
+    loadWorkerDashboard();
+    loadWorkerSchedules();
+
     const channel = supabase
       .channel(`worker-reports-${workerId}`)
       .on(
@@ -128,246 +252,296 @@ export default function WorkerDashboard() {
       )
       .subscribe();
 
+    const schedulesChannel = supabase
+      .channel(`worker-schedules-${workerId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'collection_schedules',
+          filter: `assigned_worker_id=eq.${workerId}`,
+        },
+        () => {
+          loadWorkerSchedules();
+        }
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
       supabase.removeChannel(channel);
+      supabase.removeChannel(schedulesChannel);
     };
   }, [user]);
-
-  const formatDate = (isoStr) => {
-    if (!isoStr) return '';
-    const d = new Date(isoStr);
-    return d.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
 
   return (
     <div className="worker-layout">
       <UserNavbar />
 
-      <main className="worker-main-content" role="main">
-        {/* Hero Card */}
-        <header className="worker-hero-card">
-          <div className="worker-hero-top">
-            <div className="worker-header-info">
-              <div className="worker-header-avatar" aria-hidden="true">
-                🚛
-              </div>
-              <div className="worker-header-text">
-                <h1>Field Operations Portal</h1>
-                <div className="worker-meta">
-                  <span>Logged in as <strong>{displayName}</strong></span>
-                  {displayEmail && <span className="citizen-email">{displayEmail}</span>}
-                  <span className="duty-status-badge">
-                    <span className="live-dot" aria-hidden="true"></span>
-                    On Duty
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="tab-pane-actions">
-              <Link to="/worker/reports" className="btn-secondary-link" style={{ fontSize: '0.95rem' }}>
-                All Assigned Tasks ({stats.total}) &rarr;
-              </Link>
-            </div>
+      <main className="worker-dashboard-content" role="main">
+        {/* SECTION 1 — SIMPLE HEADER */}
+        <header className="worker-header-section">
+          <div className="worker-header-top-row">
+            <span className="worker-eyebrow">FIELD OPERATIONS</span>
+            <button
+              type="button"
+              className={`worker-duty-toggle-btn ${dutyStatus ? 'on-duty' : 'off-duty'}`}
+              onClick={handleToggleDuty}
+              disabled={isTogglingDuty}
+              title={dutyStatus ? 'Currently On Duty. Click to switch Off Duty.' : 'Currently Off Duty. Click to switch On Duty.'}
+              aria-label={`Duty status: ${dutyStatus ? 'On Duty' : 'Off Duty'}. Click to toggle.`}
+            >
+              <span className="duty-dot" aria-hidden="true" />
+              <span>{isTogglingDuty ? 'UPDATING...' : (dutyStatus ? 'ON DUTY' : 'OFF DUTY')}</span>
+              <span className="duty-toggle-hint">
+                {dutyStatus ? 'Switch Off' : 'Go On Duty'}
+              </span>
+            </button>
           </div>
 
-          <p className="citizen-hero-description">
-            Execute municipal cleanup operations, update field dispatch location, and submit verified resolution evidence.
-          </p>
+          {dutyFeedback && (
+            <div
+              role="status"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                marginTop: '0.5rem',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                background: dutyFeedback.type === 'success' ? 'rgba(22, 163, 74, 0.12)' : 'rgba(220, 38, 38, 0.12)',
+                color: dutyFeedback.type === 'success' ? '#16A34A' : '#DC2626',
+                border: `1px solid ${dutyFeedback.type === 'success' ? 'rgba(22, 163, 74, 0.3)' : 'rgba(220, 38, 38, 0.3)'}`,
+              }}
+            >
+              <span>{dutyFeedback.type === 'success' ? '✓' : '⚠️'}</span>
+              <span>{dutyFeedback.message}</span>
+            </div>
+          )}
 
-          {/* GPS Location Widget */}
-          <WorkerLocationWidget />
+          <h1 className="worker-greeting">
+            {getGreeting()}, {displayName}
+          </h1>
+          <p className="worker-subtext">
+            Here are the cleanup tasks that need your attention.
+          </p>
         </header>
 
-        {/* Highlighted In-Progress / Active Task */}
-        {activeTask && (
-          <aside className="active-task-banner" aria-label="Current Active Task">
-            <div className="active-task-left">
-              <span className="active-task-icon" aria-hidden="true">
-                {activeTask.status === 'In Progress' ? '🔄' : '👍'}
-              </span>
-              <div className="active-task-info">
-                <h3>
-                  Active Task: {activeTask.title}
-                </h3>
-                <p>
-                  📍 {activeTask.address} &bull; Status: <strong>{activeTask.status}</strong>
-                </p>
-              </div>
-            </div>
-
-            <Link
-              to={`/worker/reports/${activeTask.id}`}
-              className="btn-resume-task"
-            >
-              {activeTask.status === 'In Progress' ? 'Continue Cleanup →' : 'Start Task →'}
-            </Link>
-          </aside>
-        )}
-
-        {/* Operational Statistics Grid */}
-        <section aria-labelledby="worker-stats-heading">
-          <div className="section-header">
-            <h2 id="worker-stats-heading">Task Queue Overview</h2>
-            <span className="section-badge section-badge-live">
-              <span className="live-dot" aria-hidden="true"></span>
-              Live Dispatch
-            </span>
-          </div>
-
-          <div className="worker-stats-grid">
-            {/* Card 1: Assigned (Pending Accept) */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">Assigned</h3>
-                <div className="stat-card-icon stat-icon-pending" aria-hidden="true">
-                  📥
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? '...' : stats.assigned}
-                <span className="stat-state-badge">Pending Accept</span>
-              </div>
-              <p className="stat-card-description">
-                Newly assigned tasks awaiting your review and acceptance
-              </p>
+        {/* SECTION 2 — SIMPLE KPI ROW */}
+        <section className="worker-kpi-section" aria-label="Current Task Numbers">
+          <div className="worker-kpi-grid">
+            <article className="worker-kpi-card">
+              <span className="kpi-label">ASSIGNED</span>
+              <span className="kpi-number">{stats.loading ? '...' : stats.assigned}</span>
+              <p className="kpi-desc">Tasks waiting for action</p>
             </article>
 
-            {/* Card 2: Accepted (Ready to Start) */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">Accepted</h3>
-                <div className="stat-card-icon stat-icon-accepted" aria-hidden="true">
-                  👍
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? '...' : stats.accepted}
-                <span className="stat-state-badge">Ready</span>
-              </div>
-              <p className="stat-card-description">
-                Accepted tasks ready for site transit and sanitation commencement
-              </p>
+            <article className="worker-kpi-card">
+              <span className="kpi-label">ACCEPTED</span>
+              <span className="kpi-number">{stats.loading ? '...' : stats.accepted}</span>
+              <p className="kpi-desc">Ready for site transit</p>
             </article>
 
-            {/* Card 3: In Progress */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">In Progress</h3>
-                <div className="stat-card-icon stat-icon-progress" aria-hidden="true">
-                  🧹
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? '...' : stats.inProgress}
-                <span className="stat-state-badge">Active</span>
-              </div>
-              <p className="stat-card-description">
-                Locations where cleanup work is actively being performed
-              </p>
+            <article className="worker-kpi-card">
+              <span className="kpi-label">IN PROGRESS</span>
+              <span className="kpi-number">{stats.loading ? '...' : stats.inProgress}</span>
+              <p className="kpi-desc">Active cleanup underway</p>
             </article>
 
-            {/* Card 4: Resolved */}
-            <article className="stat-card">
-              <div className="stat-card-header">
-                <h3 className="stat-card-title">Resolved</h3>
-                <div className="stat-card-icon stat-icon-completed" aria-hidden="true">
-                  ✅
-                </div>
-              </div>
-              <div className="stat-card-value">
-                {stats.loading ? '...' : stats.resolved}
-                <span className="stat-state-badge">Verified</span>
-              </div>
-              <p className="stat-card-description">
-                Completed incidents verified with resolution notes and photos
-              </p>
+            <article className="worker-kpi-card">
+              <span className="kpi-label">RESOLVED</span>
+              <span className="kpi-number">{stats.loading ? '...' : stats.resolved}</span>
+              <p className="kpi-desc">Completed &amp; certified</p>
             </article>
           </div>
         </section>
 
-        {/* Recent Tasks List */}
-        <section aria-labelledby="assigned-tasks-heading">
+        {/* SECTION 3 — PRIORITY TASK */}
+        <section className="worker-priority-section" aria-labelledby="priority-heading">
+          <h2 id="priority-heading" className="worker-section-title">TODAY&apos;S PRIORITY</h2>
+
+          {loadingTasks ? (
+            <div className="worker-loading-card">
+              <div className="tracking-spinner" />
+              <p>Checking priority assignments...</p>
+            </div>
+          ) : priorityTask ? (
+            <article className="worker-priority-card">
+              <div className="priority-card-header">
+                <span className={`worker-severity-pill severity-${(priorityTask.severity || 'medium').toLowerCase()}`}>
+                  {priorityTask.severity?.toUpperCase() || 'MEDIUM'}
+                </span>
+                <span className="worker-task-id">#{priorityTask.id.slice(0, 8)}</span>
+              </div>
+
+              <h3 className="priority-card-title">{priorityTask.title}</h3>
+
+              <p className="priority-card-location">
+                <span aria-hidden="true">📍</span> {priorityTask.address || 'Location coordinates recorded'}
+              </p>
+
+              <div className="priority-card-meta">
+                <span>{GARBAGE_TYPE_LABELS[priorityTask.garbage_type] || priorityTask.garbage_type || 'General Waste'}</span>
+                <span className="meta-sep" aria-hidden="true">&bull;</span>
+                <span className="priority-status-text">{priorityTask.status}</span>
+                <span className="meta-sep" aria-hidden="true">&bull;</span>
+                <span>{formatTime(priorityTask.created_at)}</span>
+              </div>
+
+              <div className="priority-card-footer">
+                <Link
+                  to={`/worker/reports/${priorityTask.id}`}
+                  className="btn-worker-priority-action"
+                  aria-label={`View priority task: ${priorityTask.title}`}
+                >
+                  VIEW TASK &rarr;
+                </Link>
+              </div>
+            </article>
+          ) : (
+            <div className="worker-empty-card">
+              <span className="empty-check-icon" aria-hidden="true">✓</span>
+              <h3 className="empty-card-title">No Priority Tasks Right Now</h3>
+              <p className="empty-card-desc">
+                You are all caught up. Any high-priority field cleanup dispatches will appear here.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* SECTION 4 — YOUR ASSIGNED TASKS */}
+        <section className="worker-assigned-section" aria-labelledby="assigned-tasks-heading">
           <div className="worker-section-header">
-            <h2 id="assigned-tasks-heading">Assigned Operations Queue</h2>
-            <Link to="/worker/reports" className="btn-secondary-link">
-              View All Tasks ({stats.total}) &rarr;
-            </Link>
+            <div>
+              <h2 id="assigned-tasks-heading" className="worker-section-title">YOUR ASSIGNED TASKS</h2>
+              <p className="worker-section-subtext">Tasks currently assigned to you.</p>
+            </div>
+            {stats.total > 0 && (
+              <Link to="/worker/reports" className="btn-worker-secondary-link">
+                View All ({stats.total}) &rarr;
+              </Link>
+            )}
           </div>
 
           {loadingTasks ? (
-            <div className="tracking-loading-state">
+            <div className="worker-loading-card">
               <div className="tracking-spinner" />
               <p>Loading assigned tasks...</p>
             </div>
-          ) : recentTasks.length === 0 ? (
-            <div className="state-box">
-              <span className="state-icon" aria-hidden="true">🚛</span>
-              <h3 className="state-title">No Tasks Assigned Yet</h3>
-              <p className="state-desc">
-                You currently have no tasks assigned to your dispatch queue. When municipal dispatch assigns public reports to you, they will appear here.
+          ) : assignedTasks.length === 0 ? (
+            <div className="worker-empty-card">
+              <span className="empty-check-icon" aria-hidden="true">📋</span>
+              <h3 className="empty-card-title">No Assigned Tasks</h3>
+              <p className="empty-card-desc">
+                There are no active cleanup tasks assigned to you at the moment.
               </p>
             </div>
           ) : (
-            <div className="worker-tasks-grid">
-              {recentTasks.map((task) => (
-                <article key={task.id} className="worker-task-card">
-                  <div className="task-card-hero">
-                    {task.photo_url && signedThumbnails[task.photo_url] ? (
-                      <img
-                        src={signedThumbnails[task.photo_url]}
-                        alt={`Incident evidence for ${task.title}`}
-                        className="task-photo-img"
-                      />
-                    ) : (
-                      <div className="task-photo-placeholder">
-                        <span aria-hidden="true">📸</span>
-                        <span>No Photo Available</span>
-                      </div>
-                    )}
+            <div className="worker-compact-cards-grid">
+              {assignedTasks.map((task) => (
+                <article key={task.id} className="worker-compact-card">
+                  <div className="compact-card-top">
+                    <span className={`worker-severity-pill severity-${(task.severity || 'medium').toLowerCase()}`}>
+                      {task.severity?.toUpperCase() || 'MEDIUM'}
+                    </span>
+                    <span className="worker-task-id">#{task.id.slice(0, 8)}</span>
                   </div>
 
-                  <div className="task-card-body">
-                    <div className="task-card-header-row">
-                      <h3 className="task-card-title">{task.title}</h3>
-                      <ReportStatusBadge status={task.status} size="small" />
-                    </div>
+                  <h3 className="compact-card-title">{task.title}</h3>
 
-                    <div className="task-badges-row">
-                      <span className="badge-chip">
-                        🗑️ {task.garbage_type || 'General'}
-                      </span>
-                      <span className={`badge-chip severity-${task.severity || 'medium'}`}>
-                        ⚠️ {task.severity?.toUpperCase() || 'MEDIUM'}
-                      </span>
-                    </div>
+                  <p className="compact-card-location">
+                    <span aria-hidden="true">📍</span> {task.address || 'Location coordinates recorded'}
+                  </p>
 
-                    <p className="task-address-line">
-                      <span aria-hidden="true">📍</span>
-                      <span>{task.address || 'Location recorded'}</span>
-                    </p>
-
-                    <div className="task-card-footer">
-                      <span className="task-date-text">{formatDate(task.created_at)}</span>
-                      <button
-                        type="button"
-                        className="btn-task-action"
-                        onClick={() => navigate(`/worker/reports/${task.id}`)}
-                      >
-                        Open Task &rarr;
-                      </button>
-                    </div>
+                  <div className="compact-card-footer">
+                    <span className={`worker-status-badge status-${(task.status || '').toLowerCase().replace(/\s+/g, '-')}`}>
+                      {task.status}
+                    </span>
+                    <Link
+                      to={`/worker/reports/${task.id}`}
+                      className="btn-compact-view-task"
+                      aria-label={`View task: ${task.title}`}
+                    >
+                      VIEW TASK &rarr;
+                    </Link>
                   </div>
                 </article>
               ))}
             </div>
           )}
+        </section>
+
+        {/* SECTION 5 — MY COLLECTION SCHEDULES */}
+        <section className="worker-schedules-section" aria-labelledby="schedules-heading">
+          <div className="worker-section-header">
+            <div>
+              <h2 id="schedules-heading" className="worker-section-title">MY COLLECTION SCHEDULES</h2>
+              <p className="worker-section-subtext">Upcoming municipal routes and collection schedules assigned to you.</p>
+            </div>
+          </div>
+
+          {loadingSchedules ? (
+            <div className="worker-loading-card">
+              <div className="tracking-spinner" />
+              <p>Loading assigned collection schedules...</p>
+            </div>
+          ) : schedules.length === 0 ? (
+            <div className="worker-empty-card">
+              <span className="empty-check-icon" aria-hidden="true">🗓️</span>
+              <h3 className="empty-card-title">No Collection Schedules Assigned</h3>
+              <p className="empty-card-desc">
+                You do not have any municipal collection schedules or recurring routes scheduled.
+              </p>
+            </div>
+          ) : (
+            <div className="worker-schedules-grid">
+              {schedules.map((schedule) => (
+                <article key={schedule.id} className="worker-schedule-card">
+                  <div className="schedule-card-top">
+                    <span className="worker-frequency-pill">
+                      {schedule.frequency ? schedule.frequency.toUpperCase() : 'SCHEDULED'}
+                    </span>
+                    <span className={`worker-schedule-status status-${(schedule.status || 'scheduled').toLowerCase()}`}>
+                      {schedule.status === 'in_progress' ? 'Active' : schedule.status === 'scheduled' ? 'Upcoming' : (schedule.status || 'Scheduled')}
+                    </span>
+                  </div>
+
+                  <h3 className="schedule-card-title">{schedule.title}</h3>
+
+                  <div className="schedule-card-zone">
+                    <span aria-hidden="true">📍</span> Zone: <strong>{schedule.zone_name}</strong>
+                  </div>
+
+                  <div className="schedule-card-worker" style={{ fontSize: '0.775rem', color: 'var(--worker-text-body, #555)', margin: '0.2rem 0' }}>
+                    <span aria-hidden="true">👤</span> Assigned Worker: <strong>{profile?.full_name || 'You'}</strong>
+                  </div>
+
+                  <div className="schedule-card-timing">
+                    <span className="schedule-time-item">
+                      <span aria-hidden="true">🗓️</span> {formatScheduleDate(schedule.scheduled_date)}
+                    </span>
+                    <span className="schedule-time-item">
+                      <span aria-hidden="true">⏰</span> {schedule.scheduled_start_time?.slice(0, 5)} - {schedule.scheduled_end_time?.slice(0, 5)}
+                    </span>
+                  </div>
+
+                  {schedule.notes && (
+                    <p className="schedule-card-notes">
+                      <strong>Note:</strong> {schedule.notes}
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* SECTION 6 — LOCATION WIDGET */}
+        <section className="worker-location-section" aria-label="Worker Field Dispatch Location">
+          <WorkerLocationWidget />
         </section>
       </main>
     </div>

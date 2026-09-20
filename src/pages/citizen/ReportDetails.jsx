@@ -6,7 +6,6 @@ import ReportTimeline from '../../components/citizen/ReportTimeline';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import '../../styles/citizen-tracking.css';
-import '../../styles/admin.css';
 
 const GARBAGE_TYPE_LABELS = {
   general: 'General Waste',
@@ -20,12 +19,36 @@ const GARBAGE_TYPE_LABELS = {
   other: 'Other / Mixed Waste',
 };
 
-const SEVERITY_DESCRIPTIONS = {
-  low: 'Low — Minor litter / non-blocking accumulation',
-  medium: 'Medium — Noticeable pile / potential nuisance',
-  high: 'High — Significant blockage / offensive odor',
-  critical: 'Critical — Roadway obstruction / urgent health hazard',
+const GARBAGE_TYPE_ICONS = {
+  plastic: '🥤',
+  glass: '🍾',
+  can: '🥫',
+  trash: '🗑️',
+  general: '🗑️',
+  organic: '🍏',
+  hazardous: '☣️',
+  electronic: '💻',
+  construction: '🧱',
+  bulk: '🛋️',
+  household: '🏠',
+  commercial: '🏢',
+  other: '📦',
 };
+
+const SEVERITY_DESCRIPTIONS = {
+  low: 'Low — Minor litter or non-blocking accumulation',
+  medium: 'Medium — Noticeable pile or potential neighborhood nuisance',
+  high: 'High — Significant blockage, overflow, or offensive odor',
+  critical: 'Critical — Roadway obstruction, toxic spill, or urgent health hazard',
+};
+
+const LIFECYCLE_STEPS = [
+  { key: 'Reported', label: 'Reported', field: 'created_at', icon: '📝' },
+  { key: 'Assigned', label: 'Assigned', field: 'assigned_at', icon: '👷' },
+  { key: 'Accepted', label: 'Accepted', field: 'accepted_at', icon: '👍' },
+  { key: 'In Progress', label: 'In Progress', field: 'in_progress_at', icon: '🧹' },
+  { key: 'Resolved', label: 'Resolved', field: 'resolved_at', icon: '✅' },
+];
 
 export default function ReportDetails() {
   const { reportId } = useParams();
@@ -40,7 +63,7 @@ export default function ReportDetails() {
   const [supporterCount, setSupporterCount] = useState(null);
   const [isSupporting, setIsSupporting] = useState(false);
   const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
-  const [supportFeedback, setSupportFeedback] = useState(null); // { type: 'success' | 'error', message: string }
+  const [supportFeedback, setSupportFeedback] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -336,10 +359,10 @@ export default function ReportDetails() {
       <div className="citizen-layout">
         <UserNavbar />
         <main className="tracking-container" role="main">
-          <div className="state-box" aria-live="polite">
-            <div className="auth-spinner" style={{ width: '32px', height: '32px' }} />
-            <p className="state-title">Loading incident report details...</p>
-            <p className="state-desc">Retrieving municipal milestones and dispatch status.</p>
+          <div className="state-card-box" aria-live="polite">
+            <div className="clean-spinner" />
+            <h2 className="state-card-title">Loading incident report details...</h2>
+            <p className="state-card-desc">Retrieving municipal milestones and dispatch status.</p>
           </div>
         </main>
       </div>
@@ -351,21 +374,21 @@ export default function ReportDetails() {
       <div className="citizen-layout">
         <UserNavbar />
         <main className="tracking-container" role="main">
-          <div className="state-box" role="alert">
-            <span className="state-icon" aria-hidden="true">⚠️</span>
-            <h1 className="state-title">Report Unavailable</h1>
-            <p className="state-desc">{error || 'The requested incident report was not found.'}</p>
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '1rem' }}>
+          <div className="state-card-box error" role="alert">
+            <div className="state-card-icon error-icon" aria-hidden="true">⚠️</div>
+            <h1 className="state-card-title">Report Unavailable</h1>
+            <p className="state-card-desc">{error || 'The requested incident report was not found.'}</p>
+            <div className="state-actions-cluster">
               <button
                 type="button"
-                className="btn-form-submit state-action-btn"
+                className="btn-state-cta"
                 onClick={() => navigate(reportsListRoute)}
               >
                 &larr; Back to {isAdmin ? 'All Reports' : 'My Reports'}
               </button>
               <button
                 type="button"
-                className="btn-form-cancel state-action-btn"
+                className="btn-clear-filters"
                 onClick={() => navigate(dashboardRoute)}
               >
                 Dashboard
@@ -386,220 +409,358 @@ export default function ReportDetails() {
   });
 
   const isResolved = report.status === 'Resolved';
+  const isCancelled = report.status === 'Cancelled';
   const isActive = !['Resolved', 'Cancelled'].includes(report.status);
   const isCreator = report.citizen_id === user?.id;
+
+  // Compute status pipeline index
+  const statusIndexMap = {
+    Reported: 0,
+    Assigned: 1,
+    Accepted: 2,
+    'In Progress': 3,
+    Resolved: 4,
+  };
+  const currentStepIndex = statusIndexMap[report.status] ?? 0;
 
   return (
     <div className="citizen-layout">
       <UserNavbar />
 
       <main className="tracking-container" role="main">
-        {/* Header with navigation actions */}
-        <header className="report-details-header">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-            <nav className="details-breadcrumb-nav" aria-label="Breadcrumb">
-              <Link to={dashboardRoute} className="btn-back-crumb">
-                {isAdmin ? 'Admin Console' : 'Dashboard'}
-              </Link>
-              <span aria-hidden="true">/</span>
-              <Link to={reportsListRoute} className="btn-back-crumb">
-                {isAdmin ? 'All Reports' : 'My Reports'}
-              </Link>
-              <span aria-hidden="true">/</span>
-              <span aria-current="page">Incident #{report.id.slice(0, 8)}</span>
-            </nav>
+        {/* Navigation & Operational Bar */}
+        <div className="tracking-nav-bar">
+          <div className="details-breadcrumbs">
+            <Link to={dashboardRoute} className="breadcrumb-link">
+              {isAdmin ? 'Admin Console' : 'Dashboard'}
+            </Link>
+            <span className="breadcrumb-separator" aria-hidden="true">/</span>
+            <Link to={reportsListRoute} className="breadcrumb-link">
+              {isAdmin ? 'All Reports' : 'My Reports'}
+            </Link>
+            <span className="breadcrumb-separator" aria-hidden="true">/</span>
+            <span className="breadcrumb-current">Incident #{report.id.slice(0, 8)}</span>
+          </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                type="button"
-                className="btn-form-cancel"
-                onClick={() => navigate(reportsListRoute)}
-                style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
-              >
-                &larr; {isAdmin ? 'All Reports' : 'My Reports'}
-              </button>
-              <button
-                type="button"
-                className="btn-form-cancel"
-                onClick={() => navigate(dashboardRoute)}
-                style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
-              >
-                Dashboard
-              </button>
+          <div className="details-header-quick-links">
+            <button
+              type="button"
+              className="btn-secondary-pill"
+              onClick={() => navigate(reportsListRoute)}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+              <span>Back to {isAdmin ? 'All Reports' : 'My Reports'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Header Card */}
+        <header className="report-detail-header-card">
+          <div className="detail-header-left">
+            <div className="detail-header-eyebrow-row">
+              <span className="tracking-eyebrow">REPORT DETAILS</span>
+              <span className="report-ref-chip" title={`Reference ID: ${report.id}`}>
+                #{report.id.slice(0, 8)}
+              </span>
+            </div>
+            <h1 className="detail-report-title">{report.title}</h1>
+            <div className="detail-meta-row">
+              <span className="meta-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                Filed on <strong>{createdFormatted}</strong>
+              </span>
+              <span className="meta-separator">&bull;</span>
+              <span className="meta-item">
+                <span className="report-type-chip">
+                  {GARBAGE_TYPE_ICONS[report.garbage_type] || '📦'} {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
+                </span>
+              </span>
+              <span className="meta-separator">&bull;</span>
+              <span className={`severity-chip severity-${report.severity}`}>
+                {report.severity}
+              </span>
             </div>
           </div>
 
-          <div className="report-details-title-row">
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                <span className="report-card-ref-badge" title={`Report Reference ID: ${report.id}`}>
-                  #{report.id.slice(0, 8)}
-                </span>
-                <span className="tag-garbage-type">
-                  {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
-                </span>
-                <span className={`severity-badge severity-${report.severity}`}>
-                  {report.severity}
-                </span>
-              </div>
-              <h1>{report.title}</h1>
-              <p style={{ margin: 0, color: 'var(--text)', fontSize: '0.9rem' }}>
-                Filed on <strong>{createdFormatted}</strong> &bull; Reference ID: <code>{report.id}</code>
-              </p>
-            </div>
-
+          <div className="detail-header-right">
             <ReportStatusBadge status={report.status} size="large" />
           </div>
         </header>
 
-        {/* Two-Column Details Layout */}
+        {/* Status Progression Pipeline (Stepper) */}
+        <section className="status-progression-card" aria-label="Incident resolution progression">
+          <div className="progression-header">
+            <span className="progression-title">
+              <span className="progression-icon">📡</span> Municipal Lifecycle Progress
+            </span>
+            <span className="progression-current-status">
+              Current Stage: <strong>{report.status}</strong>
+            </span>
+          </div>
+
+          {isCancelled ? (
+            <div className="status-cancelled-banner" role="status">
+              <span className="cancelled-icon">✕</span>
+              <div>
+                <strong>Incident Cancelled</strong>
+                <p>This report has been cancelled or deemed duplicate by municipal sanitation dispatch.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="stepper-track-container" role="list">
+              {LIFECYCLE_STEPS.map((step, idx) => {
+                const isPassed = idx < currentStepIndex;
+                const isCurrent = idx === currentStepIndex;
+                const dateVal = report[step.field] ? new Date(report[step.field]).toLocaleDateString() : null;
+
+                return (
+                  <div
+                    key={step.key}
+                    className={`stepper-node ${isPassed ? 'completed' : ''} ${isCurrent ? 'active' : ''}`}
+                    role="listitem"
+                  >
+                    <div className="stepper-circle-wrap">
+                      <div className="stepper-circle">
+                        {isPassed ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        ) : isCurrent ? (
+                          <span className="stepper-active-dot" />
+                        ) : (
+                          <span className="stepper-number">{idx + 1}</span>
+                        )}
+                      </div>
+                      {idx < LIFECYCLE_STEPS.length - 1 && <div className="stepper-connector" />}
+                    </div>
+
+                    <div className="stepper-label-group">
+                      <span className="stepper-label">{step.label}</span>
+                      {dateVal && <span className="stepper-date">{dateVal}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Two-Column Details & Evidence Layout */}
         <div className="report-details-layout-grid">
-          {/* Left Column: Description, Photos, Resolution & Timeline */}
-          <div className="report-details-main">
+          {/* LEFT / LARGER COLUMN: Description, Evidence (Before/After), Resolution & Timeline */}
+          <div className="report-details-main-col">
             {/* Description Section */}
-            <section className="details-section-card" aria-labelledby="desc-heading">
-              <h2 id="desc-heading">
-                <span aria-hidden="true">📋</span> Incident Description
-              </h2>
-              <p className="details-description-text">
+            <section className="detail-section-card" aria-labelledby="desc-heading">
+              <div className="section-card-header">
+                <div className="section-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 id="desc-heading" className="section-card-title">Incident Description</h2>
+                  <p className="section-card-sub">Field notes and conditions logged at submission</p>
+                </div>
+              </div>
+
+              <p className="details-description-body">
                 {report.description || 'No detailed description provided.'}
               </p>
             </section>
 
-            {/* Incident Photo Evidence Section */}
-            <section className="details-section-card" aria-labelledby="photos-heading">
-              <h2 id="photos-heading">
-                <span aria-hidden="true">📷</span> Incident Photo Evidence
-              </h2>
+            {/* Before & After Photo Evidence Section */}
+            <section className="detail-section-card" aria-labelledby="photos-heading">
+              <div className="section-card-header">
+                <div className="section-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 id="photos-heading" className="section-card-title">Before &amp; After Photo Evidence</h2>
+                  <p className="section-card-sub">Visual documentation from citizen submission through cleanup completion</p>
+                </div>
+              </div>
 
-              {incidentPhotoSignedUrl ? (
-                <div className="details-photo-box">
-                  <img
-                    src={incidentPhotoSignedUrl}
-                    alt={`Incident evidence for ${report.title}`}
-                    loading="lazy"
-                  />
-                  <div className="details-photo-caption">
-                    <span>Incident photo captured at submission</span>
-                    <a
-                      href={incidentPhotoSignedUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="report-card-link-text"
-                    >
-                      Open Full Size &rarr;
-                    </a>
+              <div className="evidence-comparison-grid">
+                {/* Initial Citizen Photo (Before) */}
+                <div className="evidence-card before-card">
+                  <div className="evidence-badge-tag before">
+                    <span aria-hidden="true">📸</span> Initial Citizen Evidence (Before)
                   </div>
+
+                  {incidentPhotoSignedUrl ? (
+                    <div className="evidence-photo-frame">
+                      <img
+                        src={incidentPhotoSignedUrl}
+                        alt={`Incident photo for ${report.title}`}
+                        className="evidence-img"
+                        loading="lazy"
+                      />
+                      <div className="evidence-caption-bar">
+                        <span className="caption-note">Captured at submission</span>
+                        <a
+                          href={incidentPhotoSignedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="evidence-zoom-link"
+                        >
+                          Full Size &rarr;
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="evidence-placeholder">
+                      <span className="placeholder-icon" aria-hidden="true">🖼️</span>
+                      <p className="placeholder-text">
+                        {report.photo_url
+                          ? 'Photo securely stored in municipal archive (loading link).'
+                          : 'No initial photo attached.'}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="state-box" style={{ padding: '2rem 1rem' }}>
-                  <span aria-hidden="true" style={{ fontSize: '1.75rem' }}>🖼️</span>
-                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                    {report.photo_url
-                      ? 'Photo stored securely in municipal archive (signed link expired or loading).'
-                      : 'No photo evidence was attached to this report.'}
-                  </p>
+
+                {/* Worker Resolution Photo (After) */}
+                <div className="evidence-card after-card">
+                  <div className="evidence-badge-tag after">
+                    <span aria-hidden="true">✅</span> Cleanup Resolution Proof (After)
+                  </div>
+
+                  {resolutionPhotoSignedUrl ? (
+                    <div className="evidence-photo-frame">
+                      <img
+                        src={resolutionPhotoSignedUrl}
+                        alt="Resolution verification photo after cleanup"
+                        className="evidence-img"
+                        loading="lazy"
+                      />
+                      <div className="evidence-caption-bar">
+                        <span className="caption-note">Certified by municipal field crew</span>
+                        <a
+                          href={resolutionPhotoSignedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="evidence-zoom-link"
+                        >
+                          Full Size &rarr;
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="evidence-placeholder">
+                      <span className="placeholder-icon" aria-hidden="true">🧹</span>
+                      <p className="placeholder-text">
+                        {isResolved
+                          ? 'Resolution certified without additional photo evidence.'
+                          : 'Post-cleanup proof photo will be uploaded here when field work concludes.'}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </section>
 
-            {/* Resolution Section (Visible when report is resolved) */}
+            {/* Resolution Verification Card (Visible when report is resolved) */}
             {isResolved && (
-              <section className="resolution-proof-card" aria-labelledby="resolution-heading">
-                <h3 id="resolution-heading">
-                  <span aria-hidden="true">✅</span> Cleanup Resolution Verified
-                </h3>
+              <section className="detail-section-card resolution-card" aria-labelledby="resolution-heading">
+                <div className="resolution-header-cluster">
+                  <div className="resolution-check-circle" aria-hidden="true">✓</div>
+                  <div>
+                    <span className="resolution-eyebrow">FIELD RESOLUTION CERTIFIED</span>
+                    <h2 id="resolution-heading" className="resolution-title">
+                      Cleanup Complete &amp; Verified
+                    </h2>
+                  </div>
+                </div>
 
-                <p className="resolution-notes-content">
-                  {report.resolution_notes || 'Cleanup completed and certified by municipal sanitation workers.'}
-                </p>
+                <div className="resolution-notes-box">
+                  <p className="resolution-notes-content">
+                    {report.resolution_notes || 'Cleanup completed and certified by municipal sanitation crew.'}
+                  </p>
+                </div>
 
                 {report.resolved_at && (
-                  <p style={{ fontSize: '0.825rem', color: '#047857', marginBottom: '1rem' }}>
-                    Resolved at: {new Date(report.resolved_at).toLocaleString()}
-                  </p>
-                )}
-
-                {resolutionPhotoSignedUrl ? (
-                  <div className="details-photo-box" style={{ marginTop: '0.5rem' }}>
-                    <img
-                      src={resolutionPhotoSignedUrl}
-                      alt="Resolution verification photo after cleanup"
-                      loading="lazy"
-                    />
-                    <div className="details-photo-caption">
-                      <span>Worker post-cleanup proof photo</span>
-                      <a
-                        href={resolutionPhotoSignedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="report-card-link-text"
-                      >
-                        View Full Resolution Proof &rarr;
-                      </a>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="state-box" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.6)' }}>
-                    <span aria-hidden="true" style={{ fontSize: '1.5rem' }}>📷</span>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text)' }}>
-                      {report.resolution_photo_url
-                        ? 'Resolution proof photo is securely archived.'
-                        : 'No post-cleanup resolution photo attached.'}
-                    </p>
+                  <div className="resolution-meta-date">
+                    <span>Certified Completed on:</span>
+                    <strong>{new Date(report.resolved_at).toLocaleString()}</strong>
                   </div>
                 )}
               </section>
             )}
 
             {/* Status Timeline History */}
-            <section className="details-section-card" aria-labelledby="timeline-heading">
-              <h2 id="timeline-heading">
-                <span aria-hidden="true">⏱️</span> Status Progression Timeline
-              </h2>
-              <ReportTimeline key={refreshKey} reportId={report.id} />
+            <section className="detail-section-card" aria-labelledby="timeline-heading">
+              <div className="section-card-header">
+                <div className="section-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 id="timeline-heading" className="section-card-title">Status Progression Timeline</h2>
+                  <p className="section-card-sub">Chronological audit trail of all dispatch and operational milestones</p>
+                </div>
+              </div>
+
+              <div className="timeline-wrapper-card">
+                <ReportTimeline key={refreshKey} reportId={report.id} />
+              </div>
             </section>
           </div>
 
-          {/* Right Column: Community Support, Location, Dispatch & Metadata */}
-          <aside className="report-details-sidebar" aria-label="Incident metadata">
-            {/* Admin Dispatch Management Card (Visible for role = admin) */}
+          {/* RIGHT / SUPPORTING COLUMN: Community Support, Location, Dispatch & Classification */}
+          <aside className="report-details-sidebar-col" aria-label="Incident metadata">
+            {/* Admin Dispatch Assignment Action (Visible for Admin role) */}
             {isAdmin && (
-              <div className="details-section-card" aria-labelledby="admin-dispatch-heading">
-                <h2 id="admin-dispatch-heading">
-                  <span aria-hidden="true">🛡️</span> Admin Dispatch Action
-                </h2>
+              <div className="detail-section-card admin-action-card" aria-labelledby="admin-dispatch-heading">
+                <div className="section-card-header">
+                  <div className="section-icon-box">🛡️</div>
+                  <div>
+                    <h2 id="admin-dispatch-heading" className="section-card-title">Admin Dispatch Action</h2>
+                    <p className="section-card-sub">Assign worker to pending report</p>
+                  </div>
+                </div>
 
-                <div className="sidebar-meta-list">
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Incident Status:</span>
+                <div className="meta-list-group">
+                  <div className="meta-row-item">
+                    <span className="meta-label">Status:</span>
                     <ReportStatusBadge status={report.status} size="small" />
                   </div>
-
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Assigned Worker:</span>
-                    <span className="sidebar-meta-value">
+                  <div className="meta-row-item">
+                    <span className="meta-label">Worker:</span>
+                    <span className="meta-val">
                       {assignedWorker ? (
                         <span className="worker-badge-pill">
                           <span aria-hidden="true">👤</span> {assignedWorker.full_name}
                         </span>
                       ) : (
-                        <span style={{ color: '#d97706', fontWeight: 600 }}>
-                          Unassigned
-                        </span>
+                        <span style={{ color: '#D97706', fontWeight: 600 }}>Unassigned</span>
                       )}
                     </span>
                   </div>
                 </div>
 
-                {/* Worker Assignment Form for Reported status */}
                 {report.status === 'Reported' ? (
-                  <form onSubmit={handleAdminAssignWorker} style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.85rem' }}>
-                    <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
-                      <label htmlFor="admin-worker-select" className="filter-label">Assign Field Worker</label>
+                  <form onSubmit={handleAdminAssignWorker} className="admin-assign-form">
+                    <div className="form-field-item">
+                      <label htmlFor="admin-worker-select" className="form-label">
+                        Assign Field Worker
+                      </label>
                       <select
                         id="admin-worker-select"
-                        className="filter-select"
+                        className="form-input-text"
                         value={adminSelectedWorkerId}
                         onChange={(e) => setAdminSelectedWorkerId(e.target.value)}
                         disabled={isAdminAssigning}
@@ -613,12 +774,14 @@ export default function ReportDetails() {
                       </select>
                     </div>
 
-                    <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
-                      <label htmlFor="admin-notes" className="filter-label">Dispatch Notes (Optional)</label>
+                    <div className="form-field-item">
+                      <label htmlFor="admin-notes" className="form-label">
+                        Dispatch Notes (Optional)
+                      </label>
                       <input
                         type="text"
                         id="admin-notes"
-                        className="filter-select"
+                        className="form-input-text"
                         placeholder="Instructions for worker..."
                         value={adminAssignNotes}
                         onChange={(e) => setAdminAssignNotes(e.target.value)}
@@ -628,127 +791,88 @@ export default function ReportDetails() {
 
                     <button
                       type="submit"
-                      className="btn-form-submit"
+                      className="btn-primary-block"
                       disabled={!adminSelectedWorkerId || isAdminAssigning}
-                      style={{ width: '100%', padding: '0.65rem', fontSize: '0.875rem' }}
                     >
-                      {isAdminAssigning ? 'Assigning...' : 'Confirm Worker Assignment'}
+                      {isAdminAssigning ? 'Assigning Worker...' : 'Confirm Worker Assignment'}
                     </button>
 
                     {adminAssignFeedback && (
-                      <div
-                        style={{
-                          marginTop: '0.75rem',
-                          padding: '0.65rem',
-                          borderRadius: '6px',
-                          fontSize: '0.8rem',
-                          background: adminAssignFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          color: adminAssignFeedback.type === 'success' ? '#047857' : '#dc2626',
-                          border: `1px solid ${adminAssignFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                        }}
-                        role="alert"
-                      >
+                      <div className={`alert-feedback ${adminAssignFeedback.type}`} role="alert">
                         {adminAssignFeedback.message}
                       </div>
                     )}
                   </form>
                 ) : (
-                  <p style={{ margin: '0.85rem 0 0 0', fontSize: '0.8rem', color: 'var(--text)', borderTop: '1px solid var(--border)', paddingTop: '0.65rem' }}>
-                    Incident is in <strong>{report.status}</strong> stage. Direct assignment is only permitted for reports in <em>Reported</em> status per business rules.
+                  <p className="admin-note-text">
+                    Incident is in <strong>{report.status}</strong> stage. Direct assignment is only permitted for reports in <em>Reported</em> status.
                   </p>
                 )}
               </div>
             )}
 
             {/* Community Support Card */}
-            <div className="details-section-card" aria-labelledby="support-heading">
-              <h2 id="support-heading">
-                <span aria-hidden="true">🤝</span> Community Support
-              </h2>
+            <div className="detail-section-card" aria-labelledby="support-heading">
+              <div className="section-card-header">
+                <div className="section-icon-box">🤝</div>
+                <div>
+                  <h2 id="support-heading" className="section-card-title">Community Support</h2>
+                  <p className="section-card-sub">Citizen solidarity to elevate dispatch priority</p>
+                </div>
+              </div>
 
-              <div className="sidebar-meta-list">
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Supporters:</span>
-                  <span className="sidebar-meta-value">
-                    {supporterCount !== null ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#059669', fontWeight: 700 }}>
-                        <span aria-hidden="true">👥</span> {supporterCount} {supporterCount === 1 ? 'Citizen' : 'Citizens'}
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--text)' }}>Available on update</span>
-                    )}
+              <div className="meta-list-group">
+                <div className="meta-row-item">
+                  <span className="meta-label">Total Supporters:</span>
+                  <span className="meta-val highlight-green">
+                    👥 {supporterCount !== null ? `${supporterCount} ${supporterCount === 1 ? 'Citizen' : 'Citizens'}` : 'Available on update'}
                   </span>
                 </div>
 
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Your Status:</span>
-                  <span className="sidebar-meta-value">
+                <div className="meta-row-item">
+                  <span className="meta-label">Your Status:</span>
+                  <span className="meta-val">
                     {isAdmin ? (
-                      <span className="admin-badge-pill" style={{ fontSize: '0.725rem' }}>
-                        Administrator
-                      </span>
+                      <span className="support-status-chip admin">Administrator</span>
                     ) : isCreator ? (
-                      <span className="worker-badge-pill" style={{ background: 'rgba(5, 150, 105, 0.1)', color: '#059669', borderColor: 'rgba(5, 150, 105, 0.25)' }}>
-                        <span aria-hidden="true">✍️</span> Submitter / Creator
-                      </span>
+                      <span className="support-status-chip creator">✍️ Report Creator</span>
                     ) : isSupporting ? (
-                      <span className="worker-badge-pill" style={{ background: 'rgba(5, 150, 105, 0.1)', color: '#059669', borderColor: 'rgba(5, 150, 105, 0.25)' }}>
-                        <span aria-hidden="true">✓</span> Supporting
-                      </span>
+                      <span className="support-status-chip active">✓ Supporting</span>
                     ) : (
-                      <span style={{ color: 'var(--text)', fontWeight: 400 }}>Not following</span>
+                      <span className="support-status-chip muted">Not following</span>
                     )}
                   </span>
                 </div>
               </div>
 
-              {/* Citizen Support Action Area (Hidden for Admin) */}
+              {/* Citizen Support Action (Hidden for Admin/Creator) */}
               {!isAdmin && !isCreator && isActive && (
-                <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                <div className="support-action-box">
                   {isSupporting ? (
-                    <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', fontSize: '0.85rem', color: '#047857' }}>
+                    <div className="support-active-card">
                       <strong>✓ You are supporting this report</strong>
-                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.775rem', lineHeight: 1.4 }}>
-                        You will receive notifications when municipal workers update dispatch or resolve this incident.
-                      </p>
+                      <p>You will receive status notifications as municipal teams update and resolve this incident.</p>
                     </div>
                   ) : (
-                    <div>
-                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.825rem', color: 'var(--text)', lineHeight: 1.45 }}>
-                        Also affected by this garbage issue? Support this report to increase municipal attention and follow dispatch updates.
-                      </p>
+                    <div className="support-trigger-card">
+                      <p>Also affected by this waste accumulation? Support this report to help prioritize dispatch.</p>
                       <button
                         type="button"
-                        className="btn-form-submit"
+                        className="btn-support-cta"
                         onClick={handleSupportReport}
                         disabled={isSubmittingSupport}
-                        style={{ width: '100%', padding: '0.65rem', fontSize: '0.875rem' }}
                       >
                         {isSubmittingSupport ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
-                            <span className="auth-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
-                            Registering support...
-                          </span>
+                          <span className="clean-spinner-small" aria-hidden="true" />
                         ) : (
-                          <span>👍 Support this Report</span>
+                          <span>👍 Support this Report (+1)</span>
                         )}
                       </button>
                     </div>
                   )}
 
                   {supportFeedback && (
-                    <div
-                      style={{
-                        marginTop: '0.75rem',
-                        padding: '0.65rem 0.85rem',
-                        borderRadius: '6px',
-                        fontSize: '0.8rem',
-                        background: supportFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                        color: supportFeedback.type === 'success' ? '#047857' : '#dc2626',
-                        border: `1px solid ${supportFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                      }}
-                      role="alert"
-                    >
+                    <div className={`alert-feedback ${supportFeedback.type}`} role="alert">
                       {supportFeedback.message}
                     </div>
                   )}
@@ -756,112 +880,115 @@ export default function ReportDetails() {
               )}
             </div>
 
-            {/* Location Card */}
-            <div className="details-section-card">
-              <h2>
-                <span aria-hidden="true">📍</span> Location Details
-              </h2>
-              <div className="sidebar-meta-list">
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Address:</span>
-                  <span className="sidebar-meta-value" style={{ maxWidth: '180px' }}>
-                    {report.address || 'GPS Coordinates Provided'}
-                  </span>
+            {/* Incident Location Card */}
+            <div className="detail-section-card">
+              <div className="section-card-header">
+                <div className="section-icon-box">📍</div>
+                <div>
+                  <h2 className="section-card-title">Location Coordinates</h2>
+                  <p className="section-card-sub">GPS reference and landmark details</p>
                 </div>
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Coordinates:</span>
-                  <span className="sidebar-meta-value">
+              </div>
+
+              <div className="meta-list-group">
+                <div className="meta-row-item">
+                  <span className="meta-label">Street Address:</span>
+                  <span className="meta-val">{report.address || 'GPS Coordinates Provided'}</span>
+                </div>
+                <div className="meta-row-item">
+                  <span className="meta-label">Coordinates:</span>
+                  <span className="meta-val monospace">
                     {typeof report.latitude === 'number' && typeof report.longitude === 'number'
-                      ? `${report.latitude.toFixed(5)}, ${report.longitude.toFixed(5)}`
+                      ? `${report.latitude.toFixed(5)}°, ${report.longitude.toFixed(5)}°`
                       : 'Unavailable'}
                   </span>
                 </div>
                 {reportingCitizen && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Reported by:</span>
-                    <span className="sidebar-meta-value">
-                      {reportingCitizen.full_name}
-                    </span>
+                  <div className="meta-row-item">
+                    <span className="meta-label">Filed by:</span>
+                    <span className="meta-val">{reportingCitizen.full_name}</span>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Municipal Dispatch Card */}
-            <div className="details-section-card">
-              <h2>
-                <span aria-hidden="true">👷</span> Municipal Dispatch
-              </h2>
-              <div className="sidebar-meta-list">
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Status:</span>
+            <div className="detail-section-card">
+              <div className="section-card-header">
+                <div className="section-icon-box">👷</div>
+                <div>
+                  <h2 className="section-card-title">Municipal Dispatch</h2>
+                  <p className="section-card-sub">Assigned crew and operational timestamps</p>
+                </div>
+              </div>
+
+              <div className="meta-list-group">
+                <div className="meta-row-item">
+                  <span className="meta-label">Dispatch Status:</span>
                   <ReportStatusBadge status={report.status} size="small" />
                 </div>
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Assigned Worker:</span>
-                  <span className="sidebar-meta-value">
+                <div className="meta-row-item">
+                  <span className="meta-label">Assigned Worker:</span>
+                  <span className="meta-val">
                     {assignedWorker ? (
                       <span className="worker-badge-pill">
                         <span aria-hidden="true">👤</span> {assignedWorker.full_name}
                       </span>
                     ) : (
-                      <span style={{ color: 'var(--text)', fontWeight: 400 }}>
-                        Pending Dispatch
-                      </span>
+                      <span className="pending-text">Pending Dispatch</span>
                     )}
                   </span>
                 </div>
                 {report.assigned_at && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Assigned Date:</span>
-                    <span className="sidebar-meta-value">
-                      {new Date(report.assigned_at).toLocaleDateString()}
-                    </span>
+                  <div className="meta-row-item">
+                    <span className="meta-label">Assigned Date:</span>
+                    <span className="meta-val">{new Date(report.assigned_at).toLocaleDateString()}</span>
                   </div>
                 )}
                 {report.accepted_at && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Accepted Date:</span>
-                    <span className="sidebar-meta-value">
-                      {new Date(report.accepted_at).toLocaleDateString()}
-                    </span>
+                  <div className="meta-row-item">
+                    <span className="meta-label">Accepted Date:</span>
+                    <span className="meta-val">{new Date(report.accepted_at).toLocaleDateString()}</span>
                   </div>
                 )}
                 {report.in_progress_at && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Work Started:</span>
-                    <span className="sidebar-meta-value">
-                      {new Date(report.in_progress_at).toLocaleDateString()}
-                    </span>
+                  <div className="meta-row-item">
+                    <span className="meta-label">Work Started:</span>
+                    <span className="meta-val">{new Date(report.in_progress_at).toLocaleDateString()}</span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Waste Classification */}
-            <div className="details-section-card">
-              <h2>
-                <span aria-hidden="true">🏷️</span> Classification
-              </h2>
-              <div className="sidebar-meta-list">
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Waste Category:</span>
-                  <span className="sidebar-meta-value">
-                    {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
+            {/* Classification & Severity Card */}
+            <div className="detail-section-card">
+              <div className="section-card-header">
+                <div className="section-icon-box">🏷️</div>
+                <div>
+                  <h2 className="section-card-title">Classification</h2>
+                  <p className="section-card-sub">Waste category and risk assessment</p>
+                </div>
+              </div>
+
+              <div className="meta-list-group">
+                <div className="meta-row-item">
+                  <span className="meta-label">Category:</span>
+                  <span className="meta-val">
+                    {GARBAGE_TYPE_ICONS[report.garbage_type] || '📦'} {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
                   </span>
                 </div>
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Severity Assessment:</span>
-                  <span className="sidebar-meta-value">
-                    <span className={`severity-badge severity-${report.severity}`}>
+                <div className="meta-row-item">
+                  <span className="meta-label">Severity:</span>
+                  <span className="meta-val">
+                    <span className={`severity-chip severity-${report.severity}`}>
                       {report.severity}
                     </span>
                   </span>
                 </div>
-                <div style={{ marginTop: '0.5rem', fontSize: '0.775rem', color: 'var(--text)', lineHeight: 1.4 }}>
-                  {SEVERITY_DESCRIPTIONS[report.severity] || ''}
-                </div>
               </div>
+              <p className="severity-helper-text">
+                {SEVERITY_DESCRIPTIONS[report.severity] || ''}
+              </p>
             </div>
           </aside>
         </div>

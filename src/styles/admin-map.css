@@ -1,0 +1,700 @@
+/* ==========================================================================
+   CleanAlert - Municipal Dispatch Map & Location Intelligence Stylesheet
+   Clean, Premium, Municipal Operational Design System
+   Matches Base44 / CleanAlert Citizen & Worker Visual Language
+   ========================================================================== */
+
+/* --- Page Layout --- */
+.dispatch-map-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  background-color: var(--admin-bg, #F8FAF9);
+  box-sizing: border-box;
+}
+
+.dispatch-map-main {
+  flex: 1;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .dispatch-map-main {
+    padding: 2rem 2rem 4.5rem;
+    gap: 1.75rem;
+  }
+}
+
+/* --- Section 1: Command Header --- */
+.dispatch-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.dispatch-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dispatch-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* --- Section 2: Operational KPI Strip --- */
+.dispatch-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+}
+
+@media (min-width: 900px) {
+  .dispatch-kpi-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+}
+
+.dispatch-kpi-card {
+  background: var(--admin-card-bg, #FFFFFF);
+  border: 1px solid var(--admin-border, #D1E7DA);
+  border-radius: var(--admin-radius, 18px);
+  padding: 1.15rem 1.25rem;
+  box-shadow: var(--admin-shadow, 0 1px 4px rgba(8, 28, 21, 0.04));
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dispatch-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--admin-shadow-hover, 0 4px 16px rgba(8, 28, 21, 0.07));
+}
+
+.dispatch-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dispatch-kpi-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--admin-text-body, #3D5A4C);
+}
+
+.dispatch-kpi-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dispatch-kpi-dot.active { background: #2563EB; box-shadow: 0 0 8px rgba(37, 99, 235, 0.4); }
+.dispatch-kpi-dot.unassigned { background: #F59E0B; box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+.dispatch-kpi-dot.critical { background: #DC2626; box-shadow: 0 0 8px rgba(220, 38, 38, 0.5); }
+.dispatch-kpi-dot.workers { background: #16A34A; box-shadow: 0 0 8px rgba(22, 163, 74, 0.4); }
+
+.dispatch-kpi-val {
+  margin: 0;
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--admin-text-h, #081C15);
+  line-height: 1.1;
+  font-family: var(--font-heading, 'Plus Jakarta Sans', sans-serif);
+}
+
+.dispatch-kpi-sub {
+  font-size: 0.75rem;
+  color: var(--admin-text-body, #3D5A4C);
+  opacity: 0.85;
+}
+
+/* --- Section 3: Filter Bar --- */
+.dispatch-filter-card {
+  background: var(--admin-card-bg, #FFFFFF);
+  border: 1px solid var(--admin-border, #D1E7DA);
+  border-radius: var(--admin-radius, 18px);
+  padding: 1rem 1.25rem;
+  box-shadow: var(--admin-shadow, 0 1px 4px rgba(8, 28, 21, 0.04));
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.dispatch-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.dispatch-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dispatch-filter-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--admin-text-body, #3D5A4C);
+  white-space: nowrap;
+}
+
+.dispatch-filter-pills {
+  display: flex;
+  align-items: center;
+  background: var(--admin-bg, #F8FAF9);
+  border: 1px solid var(--admin-border-subtle, #E5F0EA);
+  border-radius: 9999px;
+  padding: 3px;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.dispatch-filter-btn {
+  border: none;
+  background: transparent;
+  color: var(--admin-text-body, #3D5A4C);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.dispatch-filter-btn:hover {
+  color: var(--admin-text-h, #081C15);
+  background: rgba(45, 106, 79, 0.08);
+}
+
+.dispatch-filter-btn.active {
+  background: var(--admin-primary, #2D6A4F);
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(45, 106, 79, 0.25);
+}
+
+.dispatch-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--admin-text-h, #081C15);
+  cursor: pointer;
+  user-select: none;
+  background: var(--admin-bg, #F8FAF9);
+  border: 1px solid var(--admin-border, #D1E7DA);
+  border-radius: 9999px;
+  padding: 0.35rem 0.85rem;
+  transition: all 0.15s ease;
+}
+
+.dispatch-toggle-label:hover {
+  border-color: var(--admin-primary, #2D6A4F);
+}
+
+.dispatch-toggle-checkbox {
+  accent-color: var(--admin-primary, #2D6A4F);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.dispatch-reset-btn {
+  margin-left: auto;
+  border: 1px solid var(--admin-border, #D1E7DA);
+  background: #FFFFFF;
+  color: var(--admin-text-body, #3D5A4C);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dispatch-reset-btn:hover {
+  background: var(--admin-accent, #E0EFE7);
+  color: var(--admin-primary-dark, #1B4332);
+}
+
+/* --- Section 4: Map Container & Frame --- */
+.dispatch-map-card {
+  background: var(--admin-card-bg, #FFFFFF);
+  border: 1px solid var(--admin-border, #D1E7DA);
+  border-radius: var(--admin-radius, 18px);
+  overflow: hidden;
+  box-shadow: var(--admin-shadow, 0 1px 4px rgba(8, 28, 21, 0.04));
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.dispatch-map-frame {
+  width: 100%;
+  height: 600px;
+  min-height: 420px;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .dispatch-map-frame {
+    height: 460px;
+    min-height: 380px;
+  }
+}
+
+.dispatch-map-compact {
+  height: 300px;
+  min-height: 260px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* --- Map Legend & Status Bar --- */
+.dispatch-map-legend-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: #FFFFFF;
+  border-top: 1px solid var(--admin-border-subtle, #E5F0EA);
+  font-size: 0.75rem;
+  color: var(--admin-text-body, #3D5A4C);
+}
+
+.dispatch-legend-items {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.dispatch-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.dispatch-legend-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  color: #FFFFFF;
+}
+
+.legend-critical { background: #DC2626; }
+.legend-high { background: #EA580C; }
+.legend-medium { background: #2D6A4F; }
+.legend-low { background: #64748B; }
+.legend-worker { background: #15803D; border: 2px solid #86EFAC; }
+
+/* ==========================================================================
+   CUSTOM LEAFLET DOM MARKERS (L.divIcon)
+   ========================================================================== */
+
+/* Report Marker Root */
+.report-map-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  user-select: none;
+}
+
+.report-map-marker:hover {
+  transform: translateY(-3px) scale(1.08);
+  z-index: 1000 !important;
+}
+
+.marker-pin-body {
+  width: 34px;
+  height: 34px;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 8px rgba(8, 28, 21, 0.28);
+  position: relative;
+  transition: all 0.2s ease;
+  border: 2px solid #FFFFFF;
+}
+
+.marker-inner-content {
+  transform: rotate(45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+/* Severity Treatments */
+.marker-sev-critical .marker-pin-body {
+  background: linear-gradient(135deg, #DC2626, #991B1B);
+}
+
+.marker-sev-high .marker-pin-body {
+  background: linear-gradient(135deg, #EA580C, #C2410C);
+}
+
+.marker-sev-medium .marker-pin-body {
+  background: linear-gradient(135deg, #2D6A4F, #1B4332);
+}
+
+.marker-sev-low .marker-pin-body {
+  background: linear-gradient(135deg, #64748B, #475569);
+}
+
+/* Pulsing Beacon for Critical Incidents */
+.marker-sev-critical .marker-pulse-ring {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  right: -8px;
+  bottom: -8px;
+  border-radius: 50%;
+  border: 2px solid #DC2626;
+  opacity: 0.8;
+  animation: criticalBeacon 1.8s infinite ease-out;
+  pointer-events: none;
+}
+
+@keyframes criticalBeacon {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Status / Assignment Indicator Badge */
+.marker-status-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  background: #FFFFFF;
+  border-radius: 9999px;
+  padding: 1px 4px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--admin-border, #D1E7DA);
+}
+
+.status-badge-unassigned {
+  background: #FEF3C7;
+  color: #B45309;
+  border-color: #FCD34D;
+}
+
+.status-badge-assigned {
+  background: #E0E7FF;
+  color: #3730A3;
+  border-color: #C7D2FE;
+}
+
+.status-badge-inprogress {
+  background: #DBEAFE;
+  color: #1E40AF;
+  border-color: #93C5FD;
+}
+
+.status-badge-resolved {
+  background: #DCFCE7;
+  color: #166534;
+  border-color: #86EFAC;
+}
+
+/* --- Custom Worker Marker --- */
+.worker-map-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  user-select: none;
+}
+
+.worker-map-marker:hover {
+  transform: translateY(-2px) scale(1.06);
+  z-index: 1000 !important;
+}
+
+.worker-marker-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #15803D;
+  border: 3px solid #FFFFFF;
+  box-shadow: 0 3px 10px rgba(21, 128, 61, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  position: relative;
+}
+
+.worker-marker-duty-halo {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: 50%;
+  border: 2px solid #22C55E;
+  animation: workerDutyPulse 2s infinite ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes workerDutyPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.9;
+  }
+}
+
+.worker-marker-name-tag {
+  background: rgba(8, 28, 21, 0.88);
+  color: #FFFFFF;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  margin-top: 2px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* ==========================================================================
+   RICH LEAFLET POPUPS
+   ========================================================================== */
+.leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 24px rgba(8, 28, 21, 0.16) !important;
+  border: 1px solid var(--admin-border, #D1E7DA) !important;
+  background: #FFFFFF !important;
+  overflow: hidden;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4 !important;
+  font-family: inherit !important;
+}
+
+.dispatch-popup-card {
+  width: 290px;
+  max-width: 90vw;
+  box-sizing: border-box;
+}
+
+.dispatch-popup-header {
+  padding: 0.85rem 1rem 0.65rem;
+  background: var(--admin-bg, #F8FAF9);
+  border-bottom: 1px solid var(--admin-border-subtle, #E5F0EA);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dispatch-popup-badges {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dispatch-popup-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--admin-text-h, #081C15);
+  line-height: 1.25;
+}
+
+.dispatch-popup-body {
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  font-size: 0.8rem;
+  color: var(--admin-text-body, #3D5A4C);
+}
+
+.dispatch-popup-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.dispatch-popup-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.dispatch-popup-worker-box {
+  background: var(--admin-bg, #F8FAF9);
+  border: 1px solid var(--admin-border-subtle, #E5F0EA);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.775rem;
+}
+
+.dispatch-popup-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--admin-bg, #F8FAF9);
+  border-top: 1px solid var(--admin-border-subtle, #E5F0EA);
+}
+
+.btn-popup-nav {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--admin-primary, #2D6A4F);
+  color: #FFFFFF !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 8px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-popup-nav:hover {
+  background: var(--admin-primary-dark, #1B4332);
+}
+
+.btn-popup-view {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  background: #FFFFFF;
+  color: var(--admin-primary, #2D6A4F) !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 8px;
+  text-decoration: none;
+  border: 1px solid var(--admin-border, #D1E7DA);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-popup-view:hover {
+  background: var(--admin-accent, #E0EFE7);
+}
+
+/* Worker Popup Variations */
+.worker-popup-header {
+  background: linear-gradient(135deg, #1B4332, #2D6A4F);
+  color: #FFFFFF;
+  padding: 0.85rem 1rem;
+  border-bottom: none;
+}
+
+.worker-popup-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+.worker-popup-sub {
+  font-size: 0.75rem;
+  color: #A7F3D0;
+  font-weight: 600;
+}
+
+/* --- Selected Incident Drawer/Card --- */
+.dispatch-selected-drawer {
+  background: var(--admin-card-bg, #FFFFFF);
+  border: 1px solid var(--admin-border, #D1E7DA);
+  border-radius: var(--admin-radius, 18px);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--admin-shadow, 0 1px 4px rgba(8, 28, 21, 0.04));
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.selected-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.selected-drawer-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .selected-drawer-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}

@@ -4,8 +4,8 @@ import UserNavbar from '../../components/auth/UserNavbar';
 import ReportStatusBadge from '../../components/citizen/ReportStatusBadge';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import '../../styles/worker.css';
 import '../../styles/citizen-tracking.css';
+import '../../styles/worker.css';
 
 const GARBAGE_TYPE_LABELS = {
   general: 'General Waste',
@@ -25,10 +25,10 @@ export default function WorkerReports() {
   const { user } = useAuth();
 
   const [reports, setReports] = useState([]);
-  const [signedPhotoUrls, setSignedPhotoUrls] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleRetry = () => {
@@ -47,7 +47,7 @@ export default function WorkerReports() {
       try {
         const { data, error: fetchErr } = await supabase
           .from('reports')
-          .select('*')
+          .select('id, title, description, status, severity, garbage_type, address, photo_url, created_at, updated_at')
           .eq('assigned_worker_id', workerId)
           .order('created_at', { ascending: false });
 
@@ -57,30 +57,8 @@ export default function WorkerReports() {
           return;
         }
 
-        const list = data || [];
         if (isMounted) {
-          setReports(list);
-        }
-
-        // Fetch signed URLs for report incident photos
-        const photoPaths = list.map((r) => r.photo_url).filter(Boolean);
-        if (photoPaths.length > 0 && isMounted) {
-          const urlMap = {};
-          await Promise.all(
-            photoPaths.map(async (path) => {
-              try {
-                const { data: signData } = await supabase.storage
-                  .from('report-photos')
-                  .createSignedUrl(path, 3600);
-                if (signData?.signedUrl) {
-                  urlMap[path] = signData.signedUrl;
-                }
-              } catch (err) {
-                console.warn('Could not generate signed URL for task photo:', path, err);
-              }
-            })
-          );
-          if (isMounted) setSignedPhotoUrls(urlMap);
+          setReports(data || []);
         }
       } catch (err) {
         console.error('Exception loading worker reports:', err);
@@ -114,22 +92,39 @@ export default function WorkerReports() {
     };
   }, [user, refreshKey]);
 
-  // Filtering
+  // Filtering logic
   const filteredReports = reports.filter((r) => {
-    if (statusFilter === 'all') return true;
+    // Status filter
     if (statusFilter === 'action-needed') {
-      return ['Assigned', 'Accepted', 'In Progress'].includes(r.status);
+      if (!['Assigned', 'Accepted', 'In Progress'].includes(r.status)) return false;
+    } else if (statusFilter === 'assigned') {
+      if (r.status !== 'Assigned') return false;
+    } else if (statusFilter === 'accepted') {
+      if (r.status !== 'Accepted') return false;
+    } else if (statusFilter === 'in-progress') {
+      if (r.status !== 'In Progress') return false;
+    } else if (statusFilter === 'resolved') {
+      if (r.status !== 'Resolved') return false;
     }
-    if (statusFilter === 'assigned') return r.status === 'Assigned';
-    if (statusFilter === 'accepted') return r.status === 'Accepted';
-    if (statusFilter === 'in-progress') return r.status === 'In Progress';
-    if (statusFilter === 'resolved') return r.status === 'Resolved';
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = (r.title || '').toLowerCase().includes(q);
+      const matchAddress = (r.address || '').toLowerCase().includes(q);
+      const matchId = (r.id || '').toLowerCase().includes(q);
+      const matchType = (r.garbage_type || '').toLowerCase().includes(q);
+      if (!matchTitle && !matchAddress && !matchId && !matchType) return false;
+    }
+
     return true;
   });
 
   const actionNeededCount = reports.filter((r) =>
     ['Assigned', 'Accepted', 'In Progress'].includes(r.status)
   ).length;
+  const inProgressCount = reports.filter((r) => r.status === 'In Progress').length;
+  const resolvedCount = reports.filter((r) => r.status === 'Resolved').length;
 
   const formatDate = (isoStr) => {
     if (!isoStr) return '';
@@ -137,7 +132,8 @@ export default function WorkerReports() {
     return d.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -145,67 +141,84 @@ export default function WorkerReports() {
     <div className="worker-layout">
       <UserNavbar />
 
-      <main className="tracking-container" role="main">
-        {/* Header */}
-        <header className="tracking-header">
-          <div className="tracking-header-text">
-            <h1>Assigned Cleanup Operations</h1>
-            <p>Review assigned public reports, update lifecycle status, and verify completed sanitation</p>
+      <main className="worker-main-content" role="main">
+        {/* Simplified Header */}
+        <header className="worker-reports-header">
+          <div className="worker-reports-header-text">
+            <h1>Assigned Reports</h1>
+            <p>Field tasks assigned to your municipal cleanup queue</p>
+          </div>
+
+          <div className="worker-count-pill">
+            <span>{reports.length} Total</span>
+            <span>&bull;</span>
+            <span style={{ color: actionNeededCount > 0 ? '#b45309' : '#16A34A' }}>
+              {actionNeededCount} Action Needed
+            </span>
           </div>
         </header>
 
-        {/* Filter Navigation */}
-        <nav className="worker-filter-bar" aria-label="Task Status Filters">
-          <button
-            type="button"
-            className={`worker-filter-btn ${statusFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('all')}
-          >
-            All Tasks ({reports.length})
-          </button>
-          <button
-            type="button"
-            className={`worker-filter-btn ${statusFilter === 'action-needed' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('action-needed')}
-          >
-            ⚠️ Action Needed ({actionNeededCount})
-          </button>
-          <button
-            type="button"
-            className={`worker-filter-btn ${statusFilter === 'assigned' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('assigned')}
-          >
-            📥 Assigned ({reports.filter((r) => r.status === 'Assigned').length})
-          </button>
-          <button
-            type="button"
-            className={`worker-filter-btn ${statusFilter === 'accepted' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('accepted')}
-          >
-            👍 Accepted ({reports.filter((r) => r.status === 'Accepted').length})
-          </button>
-          <button
-            type="button"
-            className={`worker-filter-btn ${statusFilter === 'in-progress' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('in-progress')}
-          >
-            🧹 In Progress ({reports.filter((r) => r.status === 'In Progress').length})
-          </button>
-          <button
-            type="button"
-            className={`worker-filter-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('resolved')}
-          >
-            ✅ Resolved ({reports.filter((r) => r.status === 'Resolved').length})
-          </button>
-        </nav>
+        {/* Compact Search & Filter Toolbar */}
+        <section className="worker-compact-toolbar" aria-label="Task Search and Filters">
+          <div className="worker-search-input-wrap">
+            <span className="search-icon" aria-hidden="true">🔍</span>
+            <input
+              type="text"
+              className="worker-clean-search"
+              placeholder="Search by title, location, or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search assigned tasks"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="worker-clear-search-btn"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div className="worker-segmented-tabs" role="tablist" aria-label="Task Status Filters">
+            <button
+              type="button"
+              className={`worker-tab-btn ${statusFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('all')}
+            >
+              All ({reports.length})
+            </button>
+            <button
+              type="button"
+              className={`worker-tab-btn ${statusFilter === 'action-needed' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('action-needed')}
+            >
+              ⚡ Action Needed ({actionNeededCount})
+            </button>
+            <button
+              type="button"
+              className={`worker-tab-btn ${statusFilter === 'in-progress' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('in-progress')}
+            >
+              🧹 In Progress ({inProgressCount})
+            </button>
+            <button
+              type="button"
+              className={`worker-tab-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('resolved')}
+            >
+              ✅ Resolved ({resolvedCount})
+            </button>
+          </div>
+        </section>
 
         {/* Loading State */}
         {loading && (
           <div className="state-box" aria-live="polite">
             <div className="auth-spinner" style={{ width: '32px', height: '32px' }} />
-            <p className="state-title">Loading assigned tasks...</p>
-            <p className="state-desc">Connecting to municipal dispatch database.</p>
+            <p className="state-title">Loading assigned reports...</p>
           </div>
         )}
 
@@ -213,11 +226,11 @@ export default function WorkerReports() {
         {!loading && error && (
           <div className="state-box" role="alert">
             <span className="state-icon" aria-hidden="true">⚠️</span>
-            <p className="state-title">Error Loading Assigned Reports</p>
+            <h2 className="state-title">Unable to Load Reports</h2>
             <p className="state-desc">{error}</p>
             <button
               type="button"
-              className="btn-form-cancel state-action-btn"
+              className="btn-worker-link"
               onClick={handleRetry}
             >
               Try Again
@@ -229,65 +242,66 @@ export default function WorkerReports() {
         {!loading && !error && filteredReports.length === 0 && (
           <div className="state-box">
             <span className="state-icon" aria-hidden="true">📋</span>
-            <h2 className="state-title">No Tasks Found</h2>
+            <h2 className="state-title">No Reports Found</h2>
             <p className="state-desc">
-              {statusFilter === 'all'
+              {reports.length === 0
                 ? 'You currently have no tasks assigned to your dispatch queue.'
-                : `No tasks match the '${statusFilter}' filter criteria.`}
+                : 'No reports match your current filter or search.'}
             </p>
+            {(statusFilter !== 'all' || searchQuery) && (
+              <button
+                type="button"
+                className="btn-worker-link"
+                onClick={() => {
+                  setStatusFilter('all');
+                  setSearchQuery('');
+                }}
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
         )}
 
-        {/* Tasks Grid */}
+        {/* Simplified Cards List */}
         {!loading && !error && filteredReports.length > 0 && (
-          <div className="worker-tasks-grid">
+          <div className="worker-task-list-simple">
             {filteredReports.map((task) => (
-              <article key={task.id} className="worker-task-card">
-                <div className="task-card-hero">
-                  {task.photo_url && signedPhotoUrls[task.photo_url] ? (
-                    <img
-                      src={signedPhotoUrls[task.photo_url]}
-                      alt={`Incident site: ${task.title}`}
-                      className="task-photo-img"
-                    />
-                  ) : (
-                    <div className="task-photo-placeholder">
-                      <span aria-hidden="true">📸</span>
-                      <span>No Incident Photo</span>
-                    </div>
-                  )}
+              <article key={task.id} className="worker-task-card-simple">
+                {/* 1. Top row: Severity on left, #ID on right */}
+                <div className="task-card-top-row">
+                  <span className={`severity-tag severity-${(task.severity || 'medium').toLowerCase()}`}>
+                    {task.severity?.toUpperCase() || 'MEDIUM'}
+                  </span>
+                  <span className="task-short-id">#{task.id.slice(0, 6)}</span>
                 </div>
 
-                <div className="task-card-body">
-                  <div className="task-card-header-row">
-                    <h3 className="task-card-title">{task.title}</h3>
-                    <ReportStatusBadge status={task.status} size="small" />
-                  </div>
+                {/* 2. Report title */}
+                <h2 className="task-simple-title">{task.title}</h2>
 
-                  <div className="task-badges-row">
-                    <span className="badge-chip">
-                      🗑️ {GARBAGE_TYPE_LABELS[task.garbage_type] || task.garbage_type}
-                    </span>
-                    <span className={`badge-chip severity-${task.severity || 'medium'}`}>
-                      ⚠️ {task.severity?.toUpperCase() || 'MEDIUM'}
-                    </span>
-                  </div>
+                {/* 3. Location */}
+                <p className="task-simple-location">
+                  <span aria-hidden="true">📍</span>
+                  <span>{task.address || 'Location recorded'}</span>
+                </p>
 
-                  <p className="task-address-line">
-                    <span aria-hidden="true">📍</span>
-                    <span>{task.address || 'Coordinates recorded'}</span>
-                  </p>
+                {/* 4. Category & Date */}
+                <div className="task-simple-meta">
+                  <span>{GARBAGE_TYPE_LABELS[task.garbage_type] || task.garbage_type || 'General Waste'}</span>
+                  <span className="meta-sep">&bull;</span>
+                  <span>{formatDate(task.created_at)}</span>
+                </div>
 
-                  <div className="task-card-footer">
-                    <span className="task-date-text">Reported {formatDate(task.created_at)}</span>
-                    <button
-                      type="button"
-                      className="btn-task-action"
-                      onClick={() => navigate(`/worker/reports/${task.id}`)}
-                    >
-                      View & Manage &rarr;
-                    </button>
-                  </div>
+                {/* 5. Status & Action Button */}
+                <div className="task-simple-footer">
+                  <ReportStatusBadge status={task.status} size="small" />
+                  <button
+                    type="button"
+                    className="btn-view-task"
+                    onClick={() => navigate(`/worker/reports/${task.id}`)}
+                  >
+                    View Task &rarr;
+                  </button>
                 </div>
               </article>
             ))}

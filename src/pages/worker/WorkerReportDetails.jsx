@@ -5,8 +5,9 @@ import ReportStatusBadge from '../../components/citizen/ReportStatusBadge';
 import ReportTimeline from '../../components/citizen/ReportTimeline';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import '../../styles/worker.css';
+import { compressIncidentPhoto } from '../../utils/imageCompression';
 import '../../styles/citizen-tracking.css';
+import '../../styles/worker.css';
 
 const ALLOWED_PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -23,6 +24,14 @@ const GARBAGE_TYPE_LABELS = {
   bulk: 'Bulk / Large Items',
   other: 'Other / Mixed Waste',
 };
+
+const LIFECYCLE_STEPS = [
+  { key: 'Reported', label: 'Reported' },
+  { key: 'Assigned', label: 'Assigned' },
+  { key: 'Accepted', label: 'Accepted' },
+  { key: 'In Progress', label: 'In Progress' },
+  { key: 'Resolved', label: 'Resolved' },
+];
 
 export default function WorkerReportDetails() {
   const { reportId } = useParams();
@@ -46,7 +55,6 @@ export default function WorkerReportDetails() {
   const [selectedResolutionPhoto, setSelectedResolutionPhoto] = useState(null);
   const [resolutionPhotoPreview, setResolutionPhotoPreview] = useState(null);
   const [resolutionPhotoError, setResolutionPhotoError] = useState(null);
-  const [showResolutionForm, setShowResolutionForm] = useState(false);
   const [refreshTimelineKey, setRefreshTimelineKey] = useState(0);
 
   useEffect(() => {
@@ -73,6 +81,7 @@ export default function WorkerReportDetails() {
           return;
         }
 
+        // CRITICAL WORKER AUTHORIZATION CHECK
         if (data.assigned_worker_id !== user.id) {
           if (isMounted) setError('Access restricted: You are not assigned to this municipal dispatch task.');
           return;
@@ -80,12 +89,12 @@ export default function WorkerReportDetails() {
 
         if (isMounted) {
           setReport(data);
-          if (data.status === 'In Progress') {
-            setShowResolutionForm(true);
+          if (data.resolution_notes) {
+            setResolutionNotes(data.resolution_notes);
           }
         }
 
-        // Signed URL for incident initial photo
+        // Signed URL for citizen initial incident photo
         if (data.photo_url && isMounted) {
           try {
             const { data: signData } = await supabase.storage
@@ -99,7 +108,7 @@ export default function WorkerReportDetails() {
           }
         }
 
-        // Signed URL for resolution completion photo if exists
+        // Signed URL for worker completion photo if exists
         if (data.resolution_photo_url && isMounted) {
           try {
             const { data: resSignData } = await supabase.storage
@@ -154,8 +163,8 @@ export default function WorkerReportDetails() {
     };
   }, [resolutionPhotoPreview]);
 
-  // Handle Photo Selection
-  const handlePhotoSelect = (e) => {
+  // Photo Selection
+  const handlePhotoSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -172,8 +181,20 @@ export default function WorkerReportDetails() {
       return;
     }
 
-    setSelectedResolutionPhoto(file);
-    const objectUrl = URL.createObjectURL(file);
+    if (resolutionPhotoPreview) {
+      URL.revokeObjectURL(resolutionPhotoPreview);
+    }
+
+    // Compress client-side targeting <= 300KB WebP
+    let fileToStash = file;
+    try {
+      fileToStash = await compressIncidentPhoto(file);
+    } catch (compErr) {
+      console.warn('Worker resolution photo compression fallback:', compErr);
+    }
+
+    setSelectedResolutionPhoto(fileToStash);
+    const objectUrl = URL.createObjectURL(fileToStash);
     setResolutionPhotoPreview(objectUrl);
   };
 
@@ -189,7 +210,7 @@ export default function WorkerReportDetails() {
     }
   };
 
-  // Status Transitions
+  // Status Action: Accept Task
   const handleAcceptAssignment = async () => {
     setTransitioning(true);
     setActionErrorMsg(null);
@@ -207,7 +228,7 @@ export default function WorkerReportDetails() {
         const msg = data?.message || rpcErr?.message || 'Failed to accept task.';
         setActionErrorMsg(msg);
       } else {
-        setActionSuccessMsg('Task accepted successfully. Ready to start cleanup.');
+        setActionSuccessMsg('Task accepted. Ready to proceed to site.');
         setReport((prev) => ({ ...prev, status: 'Accepted' }));
         setRefreshTimelineKey((k) => k + 1);
       }
@@ -219,6 +240,7 @@ export default function WorkerReportDetails() {
     }
   };
 
+  // Status Action: Start Cleanup
   const handleStartCleanup = async () => {
     setTransitioning(true);
     setActionErrorMsg(null);
@@ -228,7 +250,7 @@ export default function WorkerReportDetails() {
       const { data, error: rpcErr } = await supabase.rpc('transition_report_status', {
         p_report_id: report.id,
         p_target_status: 'In Progress',
-        p_notes: 'Sanitation team arrived at incident location; work in progress.',
+        p_notes: 'Sanitation team arrived at incident location; cleanup work in progress.',
         p_resolution_photo_url: null,
       });
 
@@ -236,9 +258,8 @@ export default function WorkerReportDetails() {
         const msg = data?.message || rpcErr?.message || 'Failed to update status to In Progress.';
         setActionErrorMsg(msg);
       } else {
-        setActionSuccessMsg('Status updated: Work is now In Progress.');
+        setActionSuccessMsg('Status updated to In Progress.');
         setReport((prev) => ({ ...prev, status: 'In Progress' }));
-        setShowResolutionForm(true);
         setRefreshTimelineKey((k) => k + 1);
       }
     } catch (err) {
@@ -249,19 +270,19 @@ export default function WorkerReportDetails() {
     }
   };
 
+  // Status Action: Mark As Resolved
   const handleResolveReport = async (e) => {
     e.preventDefault();
     setActionErrorMsg(null);
     setActionSuccessMsg(null);
 
-    // Validation
     if (!resolutionNotes.trim()) {
       setActionErrorMsg('Please enter resolution notes describing the sanitation work completed.');
       return;
     }
 
     if (!selectedResolutionPhoto) {
-      setActionErrorMsg('A completion photo is required by municipal policy to verify resolution.');
+      setActionErrorMsg('A completion photo is required to verify resolution.');
       return;
     }
 
@@ -269,7 +290,6 @@ export default function WorkerReportDetails() {
     let uploadedPath = null;
 
     try {
-      // 1. Upload resolution photo to private bucket: resolution-photos/{workerId}/{fileName}
       const fileExt = selectedResolutionPhoto.name.split('.').pop().toLowerCase();
       const sanitizedName = `res_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
       const storagePath = `${user.id}/${sanitizedName}`;
@@ -283,14 +303,13 @@ export default function WorkerReportDetails() {
 
       if (uploadErr || !uploadData?.path) {
         console.error('Upload resolution photo error:', uploadErr);
-        setActionErrorMsg('Failed to upload resolution proof photo: ' + (uploadErr?.message || 'Storage error'));
+        setActionErrorMsg('Failed to upload completion photo: ' + (uploadErr?.message || 'Storage error'));
         setTransitioning(false);
         return;
       }
 
       uploadedPath = uploadData.path;
 
-      // 2. Invoke RPC transition_report_status
       const { data: rpcData, error: rpcErr } = await supabase.rpc('transition_report_status', {
         p_report_id: report.id,
         p_target_status: 'Resolved',
@@ -299,26 +318,25 @@ export default function WorkerReportDetails() {
       });
 
       if (rpcErr || rpcData?.success === false) {
-        const msg = rpcData?.message || rpcErr?.message || 'Resolution transition failed.';
+        const msg = rpcData?.message || rpcErr?.message || 'Resolution failed.';
         setActionErrorMsg(msg);
 
-        // Attempt photo cleanup if safe
         try {
           await supabase.storage.from('resolution-photos').remove([uploadedPath]);
         } catch {
           // Ignored
         }
       } else {
-        setActionSuccessMsg('Incident marked as Resolved and verified with completion proof.');
+        setActionSuccessMsg('Task marked as Resolved and verified with completion proof.');
         setReport((prev) => ({
           ...prev,
           status: 'Resolved',
           resolution_notes: resolutionNotes.trim(),
           resolution_photo_url: uploadedPath,
+          resolved_at: new Date().toISOString(),
         }));
         setRefreshTimelineKey((k) => k + 1);
 
-        // Sign photo URL for immediate display
         const { data: resSign } = await supabase.storage
           .from('resolution-photos')
           .createSignedUrl(uploadedPath, 3600);
@@ -328,7 +346,7 @@ export default function WorkerReportDetails() {
       }
     } catch (err) {
       console.error('Resolve exception:', err);
-      setActionErrorMsg('Network error while completing resolution.');
+      setActionErrorMsg('Network error while completing task.');
     } finally {
       setTransitioning(false);
     }
@@ -346,15 +364,18 @@ export default function WorkerReportDetails() {
     });
   };
 
+  // Lifecycle calculation
+  const currentStepIndex = LIFECYCLE_STEPS.findIndex((s) => s.key === report?.status);
+  const validStepIndex = currentStepIndex !== -1 ? currentStepIndex : 0;
+
   if (loading) {
     return (
       <div className="worker-layout">
         <UserNavbar />
-        <main className="tracking-container" role="main">
+        <main className="worker-task-detail-container" role="main">
           <div className="state-box" aria-live="polite">
             <div className="auth-spinner" style={{ width: '32px', height: '32px' }} />
-            <p className="state-title">Loading task operation details...</p>
-            <p className="state-desc">Retrieving municipal incident record and dispatch state.</p>
+            <p className="state-title">Loading task...</p>
           </div>
         </main>
       </div>
@@ -365,14 +386,14 @@ export default function WorkerReportDetails() {
     return (
       <div className="worker-layout">
         <UserNavbar />
-        <main className="tracking-container" role="main">
+        <main className="worker-task-detail-container" role="main">
           <div className="state-box" role="alert">
             <span className="state-icon" aria-hidden="true">⚠️</span>
             <h1 className="state-title">Task Unavailable</h1>
             <p className="state-desc">{error || 'The requested assigned task was not found.'}</p>
             <button
               type="button"
-              className="btn-form-submit state-action-btn"
+              className="btn-worker-link"
               onClick={() => navigate('/worker/reports')}
             >
               &larr; Back to Assigned Tasks
@@ -387,120 +408,172 @@ export default function WorkerReportDetails() {
     <div className="worker-layout">
       <UserNavbar />
 
-      <main className="tracking-container" role="main">
-        {/* Navigation Breadcrumb */}
-        <nav aria-label="Task Navigation" style={{ marginBottom: '1rem' }}>
-          <Link to="/worker/reports" className="btn-secondary-link">
+      <main className="worker-task-detail-container" role="main">
+        {/* 1. Back Navigation */}
+        <div className="task-detail-nav">
+          <Link to="/worker/reports" className="btn-tracking-back">
             &larr; Back to Assigned Tasks
           </Link>
-        </nav>
+        </div>
 
-        {/* Task Header Card */}
-        <header className="task-detail-header-card">
-          <div className="task-card-header-row">
-            <div>
-              <span className="section-badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
-                Municipal Dispatch Operation
-              </span>
-              <h1 style={{ margin: '0 0 0.35rem 0', fontSize: '1.65rem', color: 'var(--text-h)' }}>
-                {report.title}
-              </h1>
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                Reported {formatDate(report.created_at)} &bull; Task ID: <code style={{ fontSize: '0.8rem' }}>{report.id}</code>
-              </p>
-            </div>
-            <ReportStatusBadge status={report.status} size="large" />
+        {/* 2. Compact Essential Header: ID, Title, Severity, Location, Time */}
+        <header className="task-essential-header">
+          <div className="essential-header-top">
+            <span className="task-short-id">INCIDENT #{report.id.slice(0, 8)}</span>
+            <span className={`severity-tag severity-${(report.severity || 'medium').toLowerCase()}`}>
+              {report.severity?.toUpperCase() || 'MEDIUM'}
+            </span>
           </div>
 
-          {/* Action & Status Feedback Alerts */}
-          {actionSuccessMsg && (
-            <div className="auth-alert alert-success" role="alert">
-              <span>✅ {actionSuccessMsg}</span>
-            </div>
-          )}
-          {actionErrorMsg && (
-            <div className="auth-alert alert-error" role="alert">
-              <span>⚠️ {actionErrorMsg}</span>
-            </div>
-          )}
+          <h1 className="task-essential-title">{report.title}</h1>
 
-          {/* Status Controls Bar */}
-          <div className="task-action-controls-bar">
-            <div className="task-current-state">
-              <span className="task-state-label">Workflow Action:</span>
-              <span style={{ fontWeight: 600, color: 'var(--text-h)', fontSize: '0.9rem' }}>
-                {report.status === 'Assigned' && 'Review incident and accept assignment'}
-                {report.status === 'Accepted' && 'Accepted — ready to proceed to site'}
-                {report.status === 'In Progress' && 'Cleanup underway — complete work & upload verification'}
-                {report.status === 'Resolved' && 'Cleanup completed and verified'}
-                {report.status === 'Cancelled' && 'Report cancelled'}
-              </span>
-            </div>
-
-            <div className="action-buttons-group">
-              {/* Transition 1: Assigned -> Accepted */}
-              {report.status === 'Assigned' && (
-                <button
-                  type="button"
-                  className="btn-worker-accept"
-                  onClick={handleAcceptAssignment}
-                  disabled={transitioning}
-                >
-                  {transitioning ? 'Processing...' : '👍 Accept Task Assignment'}
-                </button>
-              )}
-
-              {/* Transition 2: Accepted -> In Progress */}
-              {report.status === 'Accepted' && (
-                <button
-                  type="button"
-                  className="btn-worker-progress"
-                  onClick={handleStartCleanup}
-                  disabled={transitioning}
-                >
-                  {transitioning ? 'Processing...' : '🚛 Start Cleanup (In Progress)'}
-                </button>
-              )}
-
-              {/* In Progress Quick Trigger */}
-              {report.status === 'In Progress' && !showResolutionForm && (
-                <button
-                  type="button"
-                  className="btn-worker-resolve"
-                  onClick={() => setShowResolutionForm(true)}
-                >
-                  ✅ Resolve & Verify Task &rarr;
-                </button>
-              )}
-
-              {report.status === 'Resolved' && (
-                <span className="duty-status-badge">
-                  ✅ Task Completed
-                </span>
-              )}
-            </div>
+          <div className="task-essential-meta">
+            <span className="meta-item">
+              <span aria-hidden="true">📍</span> {report.address || 'Address recorded'}
+            </span>
+            <span className="meta-sep">&bull;</span>
+            <span className="meta-item">Reported {formatDate(report.created_at)}</span>
           </div>
         </header>
 
-        {/* Resolution Submission Section (when In Progress) */}
-        {report.status === 'In Progress' && showResolutionForm && (
-          <section className="resolution-section-card" aria-label="Task Resolution Submission">
-            <h3>
-              <span>✅</span> Complete & Resolve Task
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-              Provide completion notes and upload a verified site photo to confirm waste sanitation.
-            </p>
+        {/* 3. Compact Status Pipeline */}
+        <section className="task-compact-status" aria-label="Task Status Pipeline">
+          <div className="compact-stepper">
+            {LIFECYCLE_STEPS.map((step, idx) => {
+              const isCompleted = idx < validStepIndex;
+              const isActive = idx === validStepIndex;
+              return (
+                <div key={step.key} className={`compact-step ${isCompleted ? 'completed' : isActive ? 'active' : ''}`}>
+                  <div className="compact-step-dot" aria-hidden="true">
+                    {isCompleted ? '✓' : idx + 1}
+                  </div>
+                  <span className="compact-step-name">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-            <form onSubmit={handleResolveReport} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div className="resolution-form-group">
+        {/* Action Alerts */}
+        {actionSuccessMsg && (
+          <div className="auth-alert alert-success" role="alert">
+            <span>✅ {actionSuccessMsg}</span>
+          </div>
+        )}
+        {actionErrorMsg && (
+          <div className="auth-alert alert-error" role="alert">
+            <span>⚠️ {actionErrorMsg}</span>
+          </div>
+        )}
+
+        {/* 4. Main Incident Section: Photo, Category, Description, Location + Open Route */}
+        <section className="task-main-incident-card" aria-label="Incident Information">
+          {incidentPhotoSignedUrl && (
+            <div className="incident-photo-container">
+              <img
+                src={incidentPhotoSignedUrl}
+                alt={`Citizen photo for ${report.title}`}
+                className="incident-evidence-photo"
+              />
+            </div>
+          )}
+
+          <div className="incident-info-body">
+            <div className="incident-type-tag">
+              <strong>Category:</strong> {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type || 'General Waste'}
+            </div>
+
+            {report.description && (
+              <div className="incident-description-text">
+                <strong>Description:</strong>
+                <p>{report.description}</p>
+              </div>
+            )}
+
+            <div className="incident-location-box">
+              <div className="location-text-wrap">
+                <span aria-hidden="true" style={{ fontSize: '1.25rem' }}>📍</span>
+                <div>
+                  <strong>{report.address || 'Incident Location'}</strong>
+                  {report.latitude && report.longitude && (
+                    <div style={{ fontSize: '0.775rem', color: 'var(--worker-text-body)', opacity: 0.8, fontFamily: 'monospace' }}>
+                      GPS: {report.latitude.toFixed(5)}°, {report.longitude.toFixed(5)}°
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {report.latitude && report.longitude && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${report.latitude},${report.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-open-route"
+                  id="btn-navigate-to-incident"
+                >
+                  🧭 NAVIGATE TO INCIDENT ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* 5. Clearly Separated YOUR ACTION Section */}
+        <section className="task-action-card" aria-label="Your Action">
+          <div className="action-card-header">
+            <span className="action-card-eyebrow">YOUR ACTION</span>
+            <ReportStatusBadge status={report.status} size="small" />
+          </div>
+
+          {/* Assigned State */}
+          {report.status === 'Assigned' && (
+            <div className="action-stage-box">
+              <p className="action-prompt">
+                This report is assigned to you. Review the incident details above and accept to begin scheduling cleanup.
+              </p>
+              <button
+                type="button"
+                className="btn-primary-action"
+                onClick={handleAcceptAssignment}
+                disabled={transitioning}
+              >
+                {transitioning ? 'Accepting Task...' : '👍 ACCEPT TASK'}
+              </button>
+            </div>
+          )}
+
+          {/* Accepted State */}
+          {report.status === 'Accepted' && (
+            <div className="action-stage-box">
+              <p className="action-prompt">
+                Task accepted. When you arrive on site and start sanitation operations, tap below:
+              </p>
+              <button
+                type="button"
+                className="btn-primary-action in-progress"
+                onClick={handleStartCleanup}
+                disabled={transitioning}
+              >
+                {transitioning ? 'Starting Cleanup...' : '🚛 START CLEANUP'}
+              </button>
+            </div>
+          )}
+
+          {/* In Progress State: Form directly visible */}
+          {report.status === 'In Progress' && (
+            <form onSubmit={handleResolveReport} className="action-resolution-form">
+              <p className="action-prompt">
+                Cleanup is in progress. To complete this task, describe the sanitation work completed and upload a verified completion photo.
+              </p>
+
+              <div className="form-group-clean">
                 <label htmlFor="resolution-notes">
-                  Resolution Notes <span style={{ color: '#ef4444' }}>*</span>
+                  Resolution Notes <span style={{ color: '#DC2626' }}>*</span>
                 </label>
                 <textarea
                   id="resolution-notes"
-                  className="resolution-textarea"
-                  placeholder="Describe the cleanup performed (e.g. Cleared 2 commercial dumpsters, swept residual debris, disinfected perimeter area)..."
+                  className="clean-textarea"
+                  placeholder="Describe the cleanup performed (e.g., cleared accumulated debris, swept the sidewalk, disinfected the area)..."
                   value={resolutionNotes}
                   onChange={(e) => setResolutionNotes(e.target.value)}
                   disabled={transitioning}
@@ -508,14 +581,14 @@ export default function WorkerReportDetails() {
                 />
               </div>
 
-              <div className="resolution-form-group">
+              <div className="form-group-clean">
                 <label>
-                  Completion Evidence Photo <span style={{ color: '#ef4444' }}>*</span>
+                  Completion Photo <span style={{ color: '#DC2626' }}>*</span>
                 </label>
 
                 {!resolutionPhotoPreview ? (
                   <div
-                    className="resolution-dropzone"
+                    className="clean-dropzone"
                     onClick={() => fileInputRef.current?.click()}
                     role="button"
                     tabIndex={0}
@@ -523,28 +596,23 @@ export default function WorkerReportDetails() {
                       if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
                     }}
                   >
-                    <span style={{ fontSize: '2rem' }}>📸</span>
-                    <div>
-                      <strong>Click to upload completion photo</strong>
-                      <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text)' }}>
-                        JPEG, PNG, or WebP up to 5 MB
-                      </p>
-                    </div>
+                    <span style={{ fontSize: '1.75rem' }}>📸</span>
+                    <strong>Take or Upload Completion Photo</strong>
+                    <small>JPEG, PNG, WebP up to 5 MB</small>
                   </div>
                 ) : (
-                  <div className="resolution-preview-wrap">
+                  <div className="clean-preview-wrap">
                     <img
                       src={resolutionPhotoPreview}
-                      alt="Completion preview"
-                      className="resolution-preview-img"
+                      alt="Completion proof preview"
+                      className="clean-preview-img"
                     />
                     <button
                       type="button"
-                      className="btn-remove-photo"
+                      className="btn-remove-preview"
                       onClick={handleRemovePhoto}
-                      title="Remove selected photo"
-                      aria-label="Remove selected photo"
                       disabled={transitioning}
+                      aria-label="Remove selected photo"
                     >
                       ✕
                     </button>
@@ -560,167 +628,115 @@ export default function WorkerReportDetails() {
                 />
 
                 {resolutionPhotoError && (
-                  <p style={{ color: '#ef4444', fontSize: '0.8rem', margin: '0.25rem 0 0 0' }}>
+                  <p style={{ color: '#DC2626', fontSize: '0.8rem', margin: '0.25rem 0 0', fontWeight: 600 }}>
                     ⚠️ {resolutionPhotoError}
                   </p>
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
-                <button
-                  type="submit"
-                  className="btn-worker-resolve"
-                  disabled={transitioning || !resolutionNotes.trim() || !selectedResolutionPhoto}
-                >
-                  {transitioning ? 'Uploading & Verifying...' : 'Submit Resolution & Complete Task'}
-                </button>
-              </div>
+              <button
+                type="submit"
+                className="btn-primary-action resolved"
+                disabled={transitioning || !resolutionNotes.trim() || !selectedResolutionPhoto}
+              >
+                {transitioning ? 'Verifying & Completing...' : '✅ MARK AS RESOLVED'}
+              </button>
             </form>
-          </section>
-        )}
+          )}
 
-        {/* Completed Resolution Details Card (when Resolved) */}
-        {report.status === 'Resolved' && (
-          <section className="resolution-section-card" aria-label="Completed Resolution Record">
-            <h3>
-              <span>✅</span> Verified Resolution Record
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text)' }}>
-              Completed and verified on {formatDate(report.resolved_at || report.updated_at)}
-            </p>
-
-            {report.resolution_notes && (
-              <div style={{ background: 'var(--code-bg)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <strong style={{ fontSize: '0.85rem', color: 'var(--text-h)', display: 'block', marginBottom: '0.25rem' }}>
-                  Field Sanitation Notes:
-                </strong>
-                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)', lineHeight: 1.5 }}>
-                  {report.resolution_notes}
-                </p>
+          {/* Resolved State */}
+          {report.status === 'Resolved' && (
+            <div className="action-stage-box resolved">
+              <div className="resolved-header-row">
+                <span className="resolved-check-badge">✓ TASK COMPLETED</span>
+                {report.resolved_at && (
+                  <span className="resolved-date">
+                    Completed on {formatDate(report.resolved_at)}
+                  </span>
+                )}
               </div>
-            )}
 
-            {resolutionPhotoSignedUrl && (
-              <div>
-                <strong style={{ fontSize: '0.85rem', color: 'var(--text-h)', display: 'block', marginBottom: '0.5rem' }}>
-                  Completion Proof Photo:
-                </strong>
-                <div style={{ maxWidth: '380px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+              {report.resolution_notes && (
+                <div className="resolved-notes-box">
+                  <strong>Field Notes:</strong>
+                  <p>{report.resolution_notes}</p>
+                </div>
+              )}
+
+              {resolutionPhotoSignedUrl && (
+                <div className="resolved-photo-wrap">
+                  <strong>Completion Photo:</strong>
                   <img
                     src={resolutionPhotoSignedUrl}
                     alt="Verified cleanup completion"
-                    style={{ width: '100%', maxHeight: '240px', objectFit: 'cover', display: 'block' }}
+                    className="resolved-photo-img"
                   />
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Main Content Grid */}
-        <div className="tracking-details-grid">
-          {/* Left Column: Incident Details & Timeline */}
-          <div className="tracking-main-card">
-            <section className="detail-section">
-              <h2>Incident Overview</h2>
-              <div className="meta-badges-row">
-                <span className="badge-chip">
-                  🗑️ {GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}
-                </span>
-                <span className={`badge-chip severity-${report.severity || 'medium'}`}>
-                  ⚠️ Priority: {report.severity?.toUpperCase() || 'MEDIUM'}
-                </span>
-              </div>
-
-              <div className="incident-description-box">
-                <h3>Reported Conditions</h3>
-                <p>{report.description || 'No detailed conditions description submitted.'}</p>
-              </div>
-
-              {/* Location */}
-              <div className="location-info-card">
-                <span className="loc-icon" aria-hidden="true">📍</span>
-                <div>
-                  <strong>Site Address:</strong>
-                  <p>{report.address || 'Address recorded by citizen'}</p>
-                  <small style={{ color: 'var(--text)', opacity: 0.8 }}>
-                    Coordinates: {report.latitude?.toFixed(5)}°, {report.longitude?.toFixed(5)}°
-                  </small>
-                </div>
-              </div>
-            </section>
-
-            {/* Incident Photo */}
-            <section className="detail-section">
-              <h2>Citizen Incident Evidence</h2>
-              {incidentPhotoSignedUrl ? (
-                <div className="photo-view-box">
-                  <img
-                    src={incidentPhotoSignedUrl}
-                    alt="Original reported incident"
-                    className="report-photo-large"
-                  />
-                </div>
-              ) : (
-                <div className="photo-placeholder-box">
-                  <span aria-hidden="true">📸</span>
-                  <p>No original incident photo attached to this submission.</p>
                 </div>
               )}
-            </section>
-
-            {/* Lifecycle Timeline */}
-            <section className="detail-section">
-              <h2>Lifecycle Status History</h2>
-              <ReportTimeline key={refreshTimelineKey} reportId={report.id} />
-            </section>
-          </div>
-
-          {/* Right Column: Quick Metadata Sidebar */}
-          <aside className="tracking-sidebar" aria-label="Task Metadata">
-            <div className="sidebar-card">
-              <h3>Task Summary</h3>
-              <div className="sidebar-meta-list">
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Current Status</span>
-                  <span className="sidebar-meta-value">
-                    <ReportStatusBadge status={report.status} size="small" />
-                  </span>
-                </div>
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Waste Type</span>
-                  <span className="sidebar-meta-value">{GARBAGE_TYPE_LABELS[report.garbage_type] || report.garbage_type}</span>
-                </div>
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Severity</span>
-                  <span className="sidebar-meta-value" style={{ textTransform: 'uppercase' }}>{report.severity}</span>
-                </div>
-                <div className="sidebar-meta-row">
-                  <span className="sidebar-meta-label">Assigned At</span>
-                  <span className="sidebar-meta-value">{report.assigned_at ? formatDate(report.assigned_at) : 'N/A'}</span>
-                </div>
-                {report.accepted_at && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Accepted At</span>
-                    <span className="sidebar-meta-value">{formatDate(report.accepted_at)}</span>
-                  </div>
-                )}
-                {report.in_progress_at && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Started At</span>
-                    <span className="sidebar-meta-value">{formatDate(report.in_progress_at)}</span>
-                  </div>
-                )}
-                {report.resolved_at && (
-                  <div className="sidebar-meta-row">
-                    <span className="sidebar-meta-label">Resolved At</span>
-                    <span className="sidebar-meta-value">{formatDate(report.resolved_at)}</span>
-                  </div>
-                )}
-              </div>
             </div>
-          </aside>
-        </div>
+          )}
+
+          {/* Cancelled State */}
+          {report.status === 'Cancelled' && (
+            <div className="action-stage-box">
+              <p style={{ color: '#DC2626', fontWeight: 600, margin: 0 }}>
+                This report has been cancelled by municipal administration.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* 6. Secondary Information Drawer (Timeline & Full Metadata) */}
+        <details className="task-secondary-details">
+          <summary className="secondary-details-summary">
+            <span>📋 Full Report Timeline & Metadata</span>
+            <span className="summary-chevron" aria-hidden="true">▼</span>
+          </summary>
+
+          <div className="secondary-details-content">
+            <div className="secondary-metadata-grid">
+              <div className="meta-cell">
+                <span className="meta-label">Incident ID</span>
+                <span className="meta-val monospace">{report.id}</span>
+              </div>
+              <div className="meta-cell">
+                <span className="meta-label">Submitted</span>
+                <span className="meta-val">{formatDate(report.created_at)}</span>
+              </div>
+              {report.assigned_at && (
+                <div className="meta-cell">
+                  <span className="meta-label">Assigned</span>
+                  <span className="meta-val">{formatDate(report.assigned_at)}</span>
+                </div>
+              )}
+              {report.accepted_at && (
+                <div className="meta-cell">
+                  <span className="meta-label">Accepted</span>
+                  <span className="meta-val">{formatDate(report.accepted_at)}</span>
+                </div>
+              )}
+              {report.in_progress_at && (
+                <div className="meta-cell">
+                  <span className="meta-label">Started</span>
+                  <span className="meta-val">{formatDate(report.in_progress_at)}</span>
+                </div>
+              )}
+              {report.resolved_at && (
+                <div className="meta-cell">
+                  <span className="meta-label">Resolved</span>
+                  <span className="meta-val">{formatDate(report.resolved_at)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="secondary-timeline-wrap">
+              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: 700, color: 'var(--worker-text-h)' }}>
+                Status History & Audit
+              </h2>
+              <ReportTimeline key={refreshTimelineKey} reportId={report.id} />
+            </div>
+          </div>
+        </details>
       </main>
     </div>
   );

@@ -1,111 +1,531 @@
+/* ==========================================================================
+   CleanAlert / CleanFlow AI - Global Design System & Theme Tokens
+   Municipal Sanitation & Waste Operations Platform
+   ========================================================================== */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* --- Core Color Tokens --- */
+  --bg: #F8FAF9;
+  --card: #FFFFFF;
+  --card-bg: #FFFFFF;
+  --foreground: #081C15;
+  --text-h: #081C15;
+  --text: #3D5A4C;
+  --muted: #E0EFE7;
+  --muted-foreground: #3D5A4C;
+  --primary: #2D6A4F;
+  --primary-hover: #22533D;
+  --primary-foreground: #F8FAF9;
+  --secondary: #74C69D;
+  --secondary-light: #E0EFE7;
+  --border: #D1E7DA;
+  --destructive: #DC2626;
+  --destructive-hover: #B91C1C;
+  --code-bg: #E0EFE7;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* --- Status Palette --- */
+  --status-reported: #DC2626;
+  --status-reported-bg: rgba(220, 38, 38, 0.1);
+  --status-reported-border: rgba(220, 38, 38, 0.25);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --status-assigned: #2D6A4F;
+  --status-assigned-bg: rgba(45, 106, 79, 0.1);
+  --status-assigned-border: rgba(45, 106, 79, 0.25);
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --status-accepted: #2D6A4F;
+  --status-accepted-bg: rgba(45, 106, 79, 0.1);
+  --status-accepted-border: rgba(45, 106, 79, 0.25);
+
+  --status-inprogress: #F59E0B;
+  --status-inprogress-bg: rgba(245, 158, 11, 0.12);
+  --status-inprogress-border: rgba(245, 158, 11, 0.3);
+
+  --status-resolved: #16A34A;
+  --status-resolved-bg: rgba(22, 163, 74, 0.1);
+  --status-resolved-border: rgba(22, 163, 74, 0.25);
+
+  --status-cancelled: #6B7280;
+  --status-cancelled-bg: rgba(107, 114, 128, 0.1);
+  --status-cancelled-border: rgba(107, 114, 128, 0.25);
+
+  /* --- Legacy CSS compatibility aliases --- */
+  --accent: #2D6A4F;
+  --accent-bg: rgba(45, 106, 79, 0.1);
+  --accent-border: rgba(45, 106, 79, 0.3);
+
+  /* --- Typography Tokens --- */
+  --font-heading: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* --- Radii Tokens --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* --- Elevation & Shadow Tokens --- */
+  --shadow-xs: 0 1px 2px rgba(8, 28, 21, 0.03);
+  --shadow-sm: 0 1px 3px rgba(8, 28, 21, 0.05), 0 1px 2px rgba(8, 28, 21, 0.03);
+  --shadow-md: 0 4px 12px rgba(8, 28, 21, 0.04), 0 1px 3px rgba(8, 28, 21, 0.03);
+  --shadow: 0 4px 14px rgba(8, 28, 21, 0.05), 0 1px 3px rgba(8, 28, 21, 0.03);
+  --shadow-lg: 0 10px 25px -3px rgba(8, 28, 21, 0.06), 0 4px 10px -2px rgba(8, 28, 21, 0.03);
+  --shadow-hover: 0 10px 24px rgba(45, 106, 79, 0.08), 0 2px 6px rgba(8, 28, 21, 0.04);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+/* --- Base Elements Reset & Font Smoothing --- */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+html {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--foreground);
+  background-color: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  color: var(--foreground);
+  background-color: var(--bg);
+  /* Subtle, restrained green mesh texture */
+  background-image: 
+    radial-gradient(at 15% 15%, rgba(116, 198, 157, 0.12) 0px, transparent 40%),
+    radial-gradient(at 85% 10%, rgba(45, 106, 79, 0.08) 0px, transparent 45%),
+    radial-gradient(at 50% 95%, rgba(224, 239, 231, 0.6) 0px, transparent 55%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  width: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  text-align: left;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* --- Modern Typography Hierarchy --- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--foreground);
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+  font-size: 2.25rem; /* 36px */
+  font-weight: 800;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+@media (min-width: 768px) {
+  h1 {
+    font-size: 2.75rem; /* 44px */
+  }
+}
+
+h2 {
+  font-size: 1.5rem; /* 24px */
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+@media (min-width: 768px) {
+  h2 {
+    font-size: 1.75rem; /* 28px */
+  }
+}
+
+h3 {
+  font-size: 1.05rem; /* 16px */
+  font-weight: 600;
+}
+
+h4 {
+  font-size: 0.95rem; /* 15px */
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+  color: var(--text);
+}
+
+small {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.text-micro {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+code, pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
 }
 
 code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  background: var(--muted);
+  color: var(--primary);
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+}
+
+/* --- Global Page Containers & Layout --- */
+.app-layout,
+.admin-layout,
+.citizen-layout,
+.worker-layout,
+.worker-page,
+.report-garbage-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  background-color: transparent;
+  box-sizing: border-box;
+}
+
+.admin-main,
+.citizen-main-content,
+.tracking-container,
+.worker-main-content,
+.worker-container,
+.report-form-container {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+@media (min-width: 640px) {
+  .admin-main,
+  .citizen-main-content,
+  .tracking-container,
+  .worker-main-content,
+  .worker-container,
+  .report-form-container {
+    padding: 1.75rem 1.5rem 3.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .admin-main,
+  .citizen-main-content,
+  .tracking-container,
+  .worker-main-content,
+  .worker-container,
+  .report-form-container {
+    padding: 2rem 2rem 4rem;
+  }
+}
+
+/* --- Global Cards --- */
+.app-card,
+.admin-hero-card,
+.citizen-hero-card,
+.admin-stat-card,
+.citizen-stat-card,
+.admin-toolbar-card,
+.admin-table-card,
+.details-section-card,
+.task-detail-header-card,
+.tracking-main-card,
+.report-form-card {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.admin-stat-card:hover,
+.citizen-stat-card:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--secondary);
+}
+
+/* --- Global Buttons --- */
+button,
+.btn-primary,
+.btn-secondary,
+.btn-destructive,
+.btn-form-submit,
+.btn-form-cancel,
+.btn-assign-row,
+.sign-out-button {
+  font-family: var(--font-body);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  line-height: 1.25;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Primary Button */
+.btn-primary,
+.btn-form-submit,
+.btn-worker-accept,
+.btn-worker-resolve {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border: 1px solid var(--primary) !important;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.875rem;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-form-submit:hover:not(:disabled),
+.btn-worker-accept:hover:not(:disabled),
+.btn-worker-resolve:hover:not(:disabled) {
+  background-color: var(--primary-hover) !important;
+  border-color: var(--primary-hover) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(45, 106, 79, 0.2);
+}
+
+.btn-primary:disabled,
+.btn-form-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary Button */
+.btn-secondary,
+.btn-form-cancel,
+.btn-assign-row {
+  background-color: var(--muted) !important;
+  color: var(--primary) !important;
+  border: 1px solid var(--border) !important;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+}
+
+.btn-secondary:hover:not(:disabled),
+.btn-form-cancel:hover:not(:disabled),
+.btn-assign-row:hover:not(:disabled) {
+  background-color: #D1E7DA !important;
+  color: var(--foreground) !important;
+  border-color: var(--secondary) !important;
+}
+
+/* Destructive Button */
+.btn-destructive {
+  background-color: var(--destructive) !important;
+  color: #FFFFFF !important;
+  border: 1px solid var(--destructive) !important;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+}
+
+.btn-destructive:hover:not(:disabled) {
+  background-color: var(--destructive-hover) !important;
+  border-color: var(--destructive-hover) !important;
+}
+
+/* Sign Out Button in Header */
+.sign-out-button {
+  background-color: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.9rem;
+  font-size: 0.825rem;
+  border-radius: var(--radius-md);
+}
+
+.sign-out-button:hover {
+  background-color: var(--muted);
+  color: var(--destructive);
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+/* --- Global Form Controls --- */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="time"],
+input[type="search"],
+select,
+textarea,
+.filter-select,
+.admin-search-input {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--foreground);
+  background-color: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.filter-select:focus,
+.admin-search-input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.14) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8BA899;
+}
+
+label,
+.filter-label {
+  font-family: var(--font-body);
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* --- Global Status Badges --- */
+.report-status-badge,
+.worker-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.status-badge-reported {
+  background-color: var(--status-reported-bg) !important;
+  color: var(--status-reported) !important;
+  border: 1px solid var(--status-reported-border) !important;
+}
+
+.status-badge-assigned {
+  background-color: var(--status-assigned-bg) !important;
+  color: var(--status-assigned) !important;
+  border: 1px solid var(--status-assigned-border) !important;
+}
+
+.status-badge-accepted {
+  background-color: var(--status-accepted-bg) !important;
+  color: var(--status-accepted) !important;
+  border: 1px solid var(--status-accepted-border) !important;
+}
+
+.status-badge-inprogress {
+  background-color: var(--status-inprogress-bg) !important;
+  color: var(--status-inprogress) !important;
+  border: 1px solid var(--status-inprogress-border) !important;
+}
+
+.status-badge-resolved {
+  background-color: var(--status-resolved-bg) !important;
+  color: var(--status-resolved) !important;
+  border: 1px solid var(--status-resolved-border) !important;
+}
+
+.status-badge-cancelled {
+  background-color: var(--status-cancelled-bg) !important;
+  color: var(--status-cancelled) !important;
+  border: 1px solid var(--status-cancelled-border) !important;
+}
+
+/* --- Role Pills --- */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.role-badge.role-admin {
+  background-color: #081C15;
+  color: #74C69D;
+  border: 1px solid rgba(116, 198, 157, 0.4);
+}
+
+.role-badge.role-worker {
+  background-color: var(--muted);
+  color: var(--primary);
+  border: 1px solid var(--secondary);
+}
+
+.role-badge.role-citizen {
+  background-color: rgba(45, 106, 79, 0.1);
+  color: var(--primary);
+  border: 1px solid var(--border);
+}
+
+/* --- Loading Spinner Component --- */
+.auth-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--muted);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Notification & Unread Badges --- */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 0.675rem;
+  font-weight: 700;
+  background-color: var(--destructive);
+  color: #FFFFFF;
+  border-radius: var(--radius-full);
+  line-height: 1;
 }

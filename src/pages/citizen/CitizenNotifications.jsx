@@ -6,11 +6,11 @@ import { supabase } from '../../lib/supabase';
 import '../../styles/citizen-tracking.css';
 
 const NOTIFICATION_TYPE_CONFIG = {
-  status_update: { label: 'Status Update', icon: '🔄', badgeClass: 'notif-badge-status' },
-  assignment: { label: 'Dispatch Assigned', icon: '👷', badgeClass: 'notif-badge-dispatch' },
-  resolution: { label: 'Cleanup Resolved', icon: '✅', badgeClass: 'notif-badge-resolution' },
-  support_confirmation: { label: 'Support Confirmed', icon: '🤝', badgeClass: 'notif-badge-support' },
-  report_update: { label: 'Report Update', icon: '📋', badgeClass: 'notif-badge-status' },
+  status_update: { label: 'Status Update', icon: '🔄', badgeClass: 'badge-status' },
+  assignment: { label: 'Dispatch Assigned', icon: '👷', badgeClass: 'badge-dispatch' },
+  resolution: { label: 'Cleanup Resolved', icon: '✅', badgeClass: 'badge-resolution' },
+  support_confirmation: { label: 'Support Confirmed', icon: '🤝', badgeClass: 'badge-support' },
+  report_update: { label: 'Report Update', icon: '📋', badgeClass: 'badge-status' },
 };
 
 function getNotificationTypeMeta(type) {
@@ -18,7 +18,7 @@ function getNotificationTypeMeta(type) {
     NOTIFICATION_TYPE_CONFIG[type] || {
       label: type ? type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Notification',
       icon: '🔔',
-      badgeClass: '',
+      badgeClass: 'badge-general',
     }
   );
 }
@@ -173,85 +173,110 @@ export default function CitizenNotifications() {
 
   return (
     <div className="citizen-layout">
+      {/* Universal CleanAlert header */}
       <UserNavbar />
 
       <main className="tracking-container" role="main">
-        {/* Header */}
-        <header className="tracking-header">
-          <div className="tracking-header-text">
-            <nav className="details-breadcrumb-nav" aria-label="Breadcrumb" style={{ marginBottom: '0.5rem' }}>
-              <Link to="/citizen" className="btn-back-crumb">
-                &larr; Dashboard
-              </Link>
-            </nav>
-            <h1>Citizen Notification Center</h1>
-            <p>Real-time progress alerts, dispatch status changes, and cleanup completions.</p>
+        {/* Navigation Breadcrumb / Operational Bar */}
+        <div className="tracking-nav-bar">
+          <Link to="/citizen" className="btn-tracking-back">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            <span>Back to Dashboard</span>
+          </Link>
+
+          <div className="tracking-header-meta">
+            <span className="tracking-meta-pill">
+              <span className="tracking-meta-dot" aria-hidden="true" />
+              Realtime Inbox Live
+            </span>
+          </div>
+        </div>
+
+        {/* CleanAlert Base44 Page Header */}
+        <header className="tracking-header-card">
+          <div className="tracking-header-content">
+            <div className="tracking-eyebrow-wrapper">
+              <span className="tracking-eyebrow">NOTIFICATIONS</span>
+            </div>
+            <h1 className="tracking-title">Notifications</h1>
+            <p className="tracking-subtitle">
+              Stay updated on your reports and municipal cleanup activity.
+            </p>
           </div>
 
-          <div className="tracking-actions-bar">
-            <Link
-              to="/citizen"
-              className="btn-form-cancel"
-              style={{ padding: '0.5rem 0.9rem', fontSize: '0.85rem', textDecoration: 'none' }}
-            >
-              Dashboard
-            </Link>
-
+          <div className="tracking-header-actions">
             <button
               type="button"
-              className="btn-mark-all-read"
+              className="btn-mark-all-pill"
               onClick={handleMarkAllRead}
               disabled={markingAll || unreadCount === 0}
-              title={unreadCount === 0 ? 'No unread notifications' : 'Mark all notifications as read'}
+              title={unreadCount === 0 ? 'No unread notifications' : 'Mark all alerts as read'}
             >
-              <span aria-hidden="true">✓✓</span>
-              {markingAll ? 'Updating...' : `Mark All Read (${unreadCount})`}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>{markingAll ? 'Marking read...' : `Mark all as read (${unreadCount})`}</span>
             </button>
           </div>
         </header>
 
-        {/* Tab Filters */}
-        <div className="tracking-filter-bar">
-          <div className="filter-pills" role="tablist" aria-label="Filter notifications">
+        {/* Segmented Filter Bar */}
+        <section className="reports-filter-section" aria-label="Notification view filters">
+          <div className="filter-segmented-bar" role="tablist" aria-label="Filter notifications">
             <button
               type="button"
               role="tab"
-              className={`filter-pill-btn ${activeTab === 'all' ? 'active' : ''}`}
+              className={`filter-segment-btn ${activeTab === 'all' ? 'active' : ''}`}
               onClick={() => setActiveTab('all')}
               aria-selected={activeTab === 'all'}
             >
-              All Alerts <span className="filter-pill-count">{notifications.length}</span>
+              <span>All Alerts</span>
+              <span className="filter-count-badge">{notifications.length}</span>
             </button>
             <button
               type="button"
               role="tab"
-              className={`filter-pill-btn ${activeTab === 'unread' ? 'active' : ''}`}
+              className={`filter-segment-btn ${activeTab === 'unread' ? 'active' : ''}`}
               onClick={() => setActiveTab('unread')}
               aria-selected={activeTab === 'unread'}
             >
-              Unread Only <span className="filter-pill-count">{unreadCount}</span>
+              <span>Unread Only</span>
+              <span className="filter-count-badge">{unreadCount}</span>
             </button>
           </div>
-        </div>
+        </section>
 
         {/* Loading State */}
         {loading && (
-          <div className="state-box" aria-live="polite">
-            <div className="auth-spinner" style={{ width: '32px', height: '32px' }} />
-            <p className="state-title">Loading notifications...</p>
-            <p className="state-desc">Checking for status alerts from municipal services.</p>
+          <div className="state-card-box" aria-live="polite">
+            <div className="clean-spinner" />
+            <h2 className="state-card-title">Loading notifications...</h2>
+            <p className="state-card-desc">Checking for dispatch updates and resolution alerts.</p>
           </div>
         )}
 
         {/* Error State */}
         {!loading && error && (
-          <div className="state-box" role="alert">
-            <span className="state-icon" aria-hidden="true">⚠️</span>
-            <p className="state-title">Error Loading Notifications</p>
-            <p className="state-desc">{error}</p>
+          <div className="state-card-box error" role="alert">
+            <div className="state-card-icon error-icon" aria-hidden="true">⚠️</div>
+            <h2 className="state-card-title">Error Loading Notifications</h2>
+            <p className="state-card-desc">{error}</p>
             <button
               type="button"
-              className="btn-form-cancel state-action-btn"
+              className="btn-retry-action"
               onClick={handleRetry}
             >
               Try Again
@@ -259,43 +284,49 @@ export default function CitizenNotifications() {
           </div>
         )}
 
-        {/* Empty State */}
+        {/* Empty State: No notifications at all */}
         {!loading && !error && notifications.length === 0 && (
-          <div className="state-box">
-            <span className="state-icon" aria-hidden="true">🔔</span>
-            <h2 className="state-title">No Notifications Yet</h2>
-            <p className="state-desc">
-              You will receive automatic alerts here when your filed reports are assigned to municipal workers, scheduled for collection, or marked as resolved.
+          <div className="state-card-box">
+            <div className="state-card-icon" aria-hidden="true">🔔</div>
+            <h2 className="state-card-title">You&apos;re all caught up</h2>
+            <p className="state-card-desc">
+              When municipal workers update dispatch or resolve your submitted reports, real-time alerts will appear here.
             </p>
             <button
               type="button"
-              className="btn-form-submit state-action-btn"
+              className="btn-state-cta"
               onClick={() => navigate('/citizen/report')}
             >
-              File a Waste Report &rarr;
+              <span>Report Garbage</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
             </button>
           </div>
         )}
 
         {/* Unread Empty State */}
         {!loading && !error && notifications.length > 0 && displayedNotifications.length === 0 && (
-          <div className="state-box">
-            <span className="state-icon" aria-hidden="true">✅</span>
-            <p className="state-title">All caught up!</p>
-            <p className="state-desc">You have no unread notifications.</p>
-            <button
-              type="button"
-              className="btn-form-cancel state-action-btn"
-              onClick={() => setActiveTab('all')}
-            >
-              View All Notifications
-            </button>
+          <div className="state-card-box">
+            <div className="state-card-icon" aria-hidden="true">✅</div>
+            <h2 className="state-card-title">You&apos;re all caught up!</h2>
+            <p className="state-card-desc">You have no unread notifications in your inbox.</p>
+            <div className="state-actions-cluster">
+              <button
+                type="button"
+                className="btn-clear-filters"
+                onClick={() => setActiveTab('all')}
+              >
+                View All Notifications
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Notifications List */}
+        {/* Notification Feed */}
         {!loading && !error && displayedNotifications.length > 0 && (
-          <div className="notifications-list" role="feed" aria-label="Notifications list">
+          <div className="notifications-feed-list" role="feed" aria-label="Notifications inbox">
             {displayedNotifications.map((notif) => {
               const typeMeta = getNotificationTypeMeta(notif.type);
               const notifDate = new Date(notif.created_at).toLocaleString(undefined, {
@@ -309,7 +340,7 @@ export default function CitizenNotifications() {
               return (
                 <div
                   key={notif.id}
-                  className={`notification-card ${!notif.is_read ? 'unread' : 'read'} ${notif.report_id ? 'clickable' : ''}`}
+                  className={`notification-row-card ${!notif.is_read ? 'unread' : 'read'} ${notif.report_id ? 'clickable' : ''}`}
                   onClick={() => handleNotificationClick(notif)}
                   role={notif.report_id ? 'button' : 'article'}
                   tabIndex={0}
@@ -321,58 +352,59 @@ export default function CitizenNotifications() {
                     }
                   }}
                 >
-                  <div className="notif-icon-col">
-                    {!notif.is_read ? (
-                      <span className="notification-unread-dot" title="Unread alert" />
-                    ) : (
-                      <span className="notification-read-icon" aria-hidden="true">
-                        {typeMeta.icon}
-                      </span>
+                  {/* Left Indicator & Icon */}
+                  <div className="notif-indicator-column">
+                    <div className="notif-type-bubble" aria-hidden="true">
+                      {typeMeta.icon}
+                    </div>
+                    {!notif.is_read && (
+                      <span className="notif-unread-glow-dot" title="Unread alert" />
                     )}
                   </div>
 
-                  <div className="notification-content">
-                    <div className="notification-header-row">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <span className={`notif-type-badge ${typeMeta.badgeClass}`}>
-                          <span aria-hidden="true">{typeMeta.icon}</span> {typeMeta.label}
+                  {/* Body Content */}
+                  <div className="notif-body-column">
+                    <div className="notif-top-meta-row">
+                      <div className="notif-badge-group">
+                        <span className={`notif-type-tag ${typeMeta.badgeClass}`}>
+                          {typeMeta.label}
                         </span>
                         {notif.report_id && (
-                          <span className="report-card-ref-badge" title={`Linked Incident Reference: ${notif.report_id}`}>
+                          <span className="report-ref-chip" title={`Linked Incident: ${notif.report_id}`}>
                             Incident #{notif.report_id.slice(0, 8)}
                           </span>
                         )}
                       </div>
 
-                      <time className="notification-date-text" dateTime={notif.created_at}>
+                      <time className="notif-timestamp" dateTime={notif.created_at}>
                         {notifDate}
                       </time>
                     </div>
 
-                    <h2 className="notification-card-title">{notif.title}</h2>
-                    <p className="notification-card-msg">{notif.message}</p>
+                    <h2 className="notif-item-title">{notif.title}</h2>
+                    <p className="notif-item-message">{notif.message}</p>
 
-                    <div className="notification-card-footer">
-                      <div>
-                        {notif.report_id ? (
-                          <span className="report-card-link-text">
-                            View Linked Incident &rarr;
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text)', opacity: 0.8 }}>
-                            System Alert
-                          </span>
-                        )}
-                      </div>
+                    <div className="notif-bottom-row">
+                      {notif.report_id ? (
+                        <span className="notif-linked-action">
+                          <span>View Report Details</span>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                            <polyline points="12 5 19 12 12 19" />
+                          </svg>
+                        </span>
+                      ) : (
+                        <span className="notif-system-tag">System Notification</span>
+                      )}
 
                       {!notif.is_read && (
                         <button
                           type="button"
-                          className="btn-mark-read"
+                          className="btn-mark-single-read"
                           onClick={(e) => handleMarkSingleRead(e, notif.id)}
                           aria-label="Mark notification as read"
                         >
-                          Mark Read
+                          Mark as read
                         </button>
                       )}
                     </div>

@@ -127,52 +127,59 @@ export default function WorkerNotifications() {
   });
 
   return (
-    <div className="worker-page">
+    <div className="worker-layout">
       <UserNavbar />
 
-      <main className="tracking-container" role="main">
-        {/* Header */}
-        <header className="tracking-header">
-          <div className="tracking-header-text">
-            <h1>Field Dispatch Notifications</h1>
-            <p>Direct assignment notices, emergency alerts, and status change alerts from municipal operations</p>
+      <main className="worker-main-content" role="main">
+        {/* Header Card */}
+        <header className="tracking-header-card">
+          <div className="tracking-header-content">
+            <div className="tracking-eyebrow-wrapper">
+              <span className="tracking-eyebrow">FIELD DISPATCH ALERTS</span>
+            </div>
+            <h1 className="tracking-title">Field Notifications</h1>
+            <p className="tracking-subtitle">
+              Direct task assignments, status change alerts, and municipal dispatch communications.
+            </p>
           </div>
 
-          {unreadCount > 0 && (
-            <button
-              type="button"
-              className="btn-mark-all-read"
-              onClick={handleMarkAllRead}
-              disabled={markingAll}
-            >
-              {markingAll ? 'Updating...' : `Mark All Read (${unreadCount})`}
-            </button>
-          )}
+          <div className="tracking-header-actions">
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                className="btn-mark-all-pill"
+                onClick={handleMarkAllRead}
+                disabled={markingAll}
+              >
+                {markingAll ? 'Updating...' : `✓ Mark All Read (${unreadCount})`}
+              </button>
+            )}
+          </div>
         </header>
 
-        {/* Tab Filters */}
-        <nav className="filter-nav-bar" aria-label="Notification view filters">
+        {/* Tab Filters Bar */}
+        <nav className="worker-notif-tabs" aria-label="Notification view filters">
           <button
             type="button"
-            className={`filter-pill-btn ${activeTab === 'all' ? 'active' : ''}`}
+            className={`worker-notif-tab-btn ${activeTab === 'all' ? 'active' : ''}`}
             onClick={() => setActiveTab('all')}
           >
             All Dispatch Alerts ({notifications.length})
           </button>
           <button
             type="button"
-            className={`filter-pill-btn ${activeTab === 'unread' ? 'active' : ''}`}
+            className={`worker-notif-tab-btn ${activeTab === 'unread' ? 'active' : ''}`}
             onClick={() => setActiveTab('unread')}
           >
-            Unread Only ({unreadCount})
+            Unread Alerts ({unreadCount})
           </button>
         </nav>
 
         {/* Loading State */}
         {loading && (
           <div className="state-box" aria-live="polite">
-            <div className="auth-spinner" style={{ width: '32px', height: '32px' }} />
-            <p className="state-title">Loading field notifications...</p>
+            <div className="auth-spinner" style={{ width: '36px', height: '36px' }} />
+            <p className="state-title">Loading dispatch notifications...</p>
             <p className="state-desc">Checking for dispatch updates and task assignments.</p>
           </div>
         )}
@@ -181,7 +188,7 @@ export default function WorkerNotifications() {
         {!loading && error && (
           <div className="state-box" role="alert">
             <span className="state-icon" aria-hidden="true">⚠️</span>
-            <p className="state-title">Error Loading Notifications</p>
+            <h2 className="state-title">Error Loading Notifications</h2>
             <p className="state-desc">{error}</p>
             <button
               type="button"
@@ -193,17 +200,17 @@ export default function WorkerNotifications() {
           </div>
         )}
 
-        {/* Empty State */}
+        {/* Empty State: No notifications at all */}
         {!loading && !error && notifications.length === 0 && (
           <div className="state-box">
             <span className="state-icon" aria-hidden="true">🔔</span>
             <h2 className="state-title">No Dispatch Notifications</h2>
             <p className="state-desc">
-              You do not have any notifications yet. New cleanup task assignments will alert you here.
+              You do not have any notifications yet. When municipal dispatch assigns reports to you, alerts will appear here in real time.
             </p>
             <button
               type="button"
-              className="worker-btn worker-btn-primary"
+              className="btn-worker-link"
               onClick={() => navigate('/worker/reports')}
             >
               View Assigned Reports &rarr;
@@ -211,18 +218,18 @@ export default function WorkerNotifications() {
           </div>
         )}
 
-        {/* Unread Empty State */}
+        {/* Empty State: No unread notifications */}
         {!loading && !error && notifications.length > 0 && displayedNotifications.length === 0 && (
           <div className="state-box">
             <span className="state-icon" aria-hidden="true">✅</span>
-            <p className="state-title">All caught up!</p>
-            <p className="state-desc">You have no unread notifications.</p>
+            <h2 className="state-title">All Caught Up!</h2>
+            <p className="state-desc">You have no unread notifications in your field dispatch inbox.</p>
             <button
               type="button"
               className="btn-form-cancel state-action-btn"
               onClick={() => setActiveTab('all')}
             >
-              View All Notifications
+              View All Alerts
             </button>
           </div>
         )}
@@ -240,42 +247,43 @@ export default function WorkerNotifications() {
               });
 
               return (
-                <div
+                <article
                   key={notif.id}
-                  className={`notification-card ${!notif.is_read ? 'unread' : 'read'}`}
-                  role="article"
+                  className={`worker-notif-card ${!notif.is_read ? 'unread' : 'read'}`}
                   aria-label={`${notif.title}: ${notif.message}`}
                 >
                   {!notif.is_read && (
-                    <div className="notification-unread-dot" title="Unread alert" />
+                    <div className="worker-notif-dot" title="Unread alert" aria-hidden="true" />
                   )}
 
-                  <div className="notification-content">
-                    <h2 className="notification-card-title">{notif.title}</h2>
-                    <p className="notification-card-msg">{notif.message}</p>
+                  <div className="worker-notif-content">
+                    <h2 className="worker-notif-title">{notif.title}</h2>
+                    <p className="worker-notif-msg">{notif.message}</p>
 
-                    <div className="notification-card-footer">
-                      <time dateTime={notif.created_at}>{notifDate}</time>
+                    <div className="worker-notif-footer">
+                      <time className="worker-notif-time" dateTime={notif.created_at}>
+                        {notifDate}
+                      </time>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div className="worker-notif-actions">
                         {notif.report_id && (
                           <Link
                             to={`/worker/reports/${notif.report_id}`}
-                            className="report-card-link-text"
+                            className="btn-notif-open"
                             onClick={(e) => {
                               if (!notif.is_read) {
                                 handleMarkSingleRead(e, notif.id);
                               }
                             }}
                           >
-                            Open Assigned Report &rarr;
+                            Open Assigned Task &rarr;
                           </Link>
                         )}
 
                         {!notif.is_read && (
                           <button
                             type="button"
-                            className="btn-mark-read"
+                            className="btn-notif-read"
                             onClick={(e) => handleMarkSingleRead(e, notif.id)}
                             aria-label="Mark notification as read"
                           >
@@ -285,7 +293,7 @@ export default function WorkerNotifications() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>

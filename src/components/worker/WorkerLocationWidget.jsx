@@ -127,8 +127,8 @@ export default function WorkerLocationWidget({ onLocationUpdated }) {
     <div className="worker-location-bar" role="region" aria-label="Worker GPS Location Dispatch">
       <div className="worker-location-left">
         <span className="location-pin-icon" aria-hidden="true">📍</span>
-        <div>
-          <div>
+        <div className="location-details">
+          <div className="location-coords-line">
             <span>Dispatch Coordinates: </span>
             <span className="location-coords-text">
               {lastLocation.coordsText || 'Not recorded yet'}
@@ -137,8 +137,16 @@ export default function WorkerLocationWidget({ onLocationUpdated }) {
           <div className="location-time-text">
             Last GPS sync: {formatTimeAgo(lastLocation.updatedAt)}
           </div>
-          {statusMsg && <div style={{ color: '#059669', fontSize: '0.775rem', marginTop: '2px' }}>{statusMsg}</div>}
-          {errorMsg && <div style={{ color: '#ef4444', fontSize: '0.775rem', marginTop: '2px' }}>{errorMsg}</div>}
+          {statusMsg && (
+            <div style={{ color: '#16A34A', fontSize: '0.8rem', fontWeight: 600, marginTop: '4px' }}>
+              ✓ {statusMsg}
+            </div>
+          )}
+          {errorMsg && (
+            <div style={{ color: '#DC2626', fontSize: '0.8rem', fontWeight: 600, marginTop: '4px' }}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
         </div>
       </div>
 

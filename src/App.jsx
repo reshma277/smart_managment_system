@@ -20,8 +20,12 @@ import WorkerReportDetails from './pages/worker/WorkerReportDetails';
 import WorkerNotifications from './pages/worker/WorkerNotifications';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminReports from './pages/admin/AdminReports';
+import AdminReportDetails from './pages/admin/AdminReportDetails';
 import AdminWorkers from './pages/admin/AdminWorkers';
 import AdminSchedules from './pages/admin/AdminSchedules';
+import AdminDispatchMap from './pages/admin/AdminDispatchMap';
+import AdminNotifications from './pages/admin/AdminNotifications';
+import AdminFleet from './pages/admin/AdminFleet';
 
 import './styles/auth.css';
 
@@ -107,9 +111,12 @@ export default function App() {
           <Route element={<RoleGuard allowedRoles={['admin']} />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/reports" element={<AdminReports />} />
-            <Route path="/admin/reports/:reportId" element={<ReportDetails />} />
+            <Route path="/admin/reports/:reportId" element={<AdminReportDetails />} />
+            <Route path="/admin/map" element={<AdminDispatchMap />} />
             <Route path="/admin/workers" element={<AdminWorkers />} />
             <Route path="/admin/schedules" element={<AdminSchedules />} />
+            <Route path="/admin/fleet" element={<AdminFleet />} />
+            <Route path="/admin/notifications" element={<AdminNotifications />} />
           </Route>
         </Route>
 

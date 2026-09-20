@@ -13,7 +13,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
 
-  // Redirect authenticated users away from login page
+  // Redirect authenticated users away from login page to home or their dashboard
   if (!loading && user) {
     return <Navigate to="/" replace />;
   }
@@ -63,13 +63,30 @@ export default function Login() {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        {/* Brand & Header */}
         <div className="auth-header">
           <div className="auth-brand">
-            <span className="brand-icon" aria-hidden="true">🌱</span>
-            <h2>CleanAlert</h2>
+            <div className="auth-brand-tile" aria-hidden="true">
+              🌱
+            </div>
+            <div>
+              <span className="auth-brand-name">CleanAlert</span>
+              <span className="auth-brand-sub">Municipal Operations</span>
+            </div>
           </div>
-          <h1>Sign In to Your Account</h1>
-          <p className="auth-subtitle">Municipal waste reporting & dispatch management</p>
+          <div className="auth-eyebrow-wrapper">
+            <span className="auth-eyebrow-chip">SECURE PORTAL ACCESS</span>
+          </div>
+          <h1 className="auth-main-title">Sign in to your CleanAlert account</h1>
+          <p className="auth-subtitle">Access your municipal operations portal.</p>
+        </div>
+
+        {/* Role-Aware Portal Banner */}
+        <div className="auth-portal-hint-box" role="note">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span>Citizens, Field Workers, and Dispatch Administrators sign in here.</span>
         </div>
 
         {activeError && (
@@ -89,7 +106,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="name@example.com"
               disabled={submitting}
             />
           </div>
@@ -128,16 +145,19 @@ export default function Login() {
             className="auth-submit-btn"
             disabled={submitting}
           >
-            {submitting ? 'Signing In...' : 'Sign In'}
+            {submitting ? 'Signing In...' : 'Sign In to Portal'}
           </button>
         </form>
 
         <div className="auth-footer">
-          <p>
-            Don't have an account?{' '}
+          <p className="auth-switch-prompt">
+            Need citizen access?{' '}
             <Link to="/register" className="auth-switch-link">
-              Register as a Citizen
+              Create Citizen Account
             </Link>
+          </p>
+          <p className="auth-worker-note">
+            Worker and Administrator accounts are provisioned directly by municipal authorities.
           </p>
         </div>
       </div>

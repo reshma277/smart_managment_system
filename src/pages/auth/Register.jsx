@@ -71,16 +71,24 @@ export default function Register() {
       <div className="auth-card">
         <div className="auth-header">
           <div className="auth-brand">
-            <span className="brand-icon" aria-hidden="true">🌱</span>
-            <h2>CleanAlert</h2>
+            <div className="auth-brand-tile" aria-hidden="true">
+              🌱
+            </div>
+            <div>
+              <span className="auth-brand-name">CleanAlert</span>
+              <span className="auth-brand-sub">Citizen Services</span>
+            </div>
           </div>
-          <h1>Create Citizen Account</h1>
-          <p className="auth-subtitle">Join your community in keeping our city clean</p>
+          <div className="auth-eyebrow-wrapper">
+            <span className="auth-eyebrow-chip">PUBLIC REGISTRATION</span>
+          </div>
+          <h1 className="auth-main-title">Create Citizen Account</h1>
+          <p className="auth-subtitle">Join your community in reporting and tracking neighborhood cleanup.</p>
         </div>
 
         {/* Informational Role Notice */}
         <div className="auth-info-banner" role="note">
-          <strong>Notice:</strong> All public registrations are created with <em>Citizen</em> access.
+          <strong>Notice:</strong> All public registrations create <em>Citizen</em> accounts.
           Field Worker and Municipal Administrator accounts are provisioned directly by city administration.
         </div>
 
@@ -97,7 +105,7 @@ export default function Register() {
             <div>
               <strong>Verification link sent!</strong>
               <p>
-                We've sent a confirmation email to <strong>{email}</strong>. 
+                We&apos;ve sent a confirmation email to <strong>{email}</strong>. 
                 Please click the link in your email to activate your account, then sign in.
               </p>
               <div style={{ marginTop: '1rem' }}>
@@ -202,7 +210,7 @@ export default function Register() {
         )}
 
         <div className="auth-footer">
-          <p>
+          <p className="auth-switch-prompt">
             Already have an account?{' '}
             <Link to="/login" className="auth-switch-link">
               Sign In here

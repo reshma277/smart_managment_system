@@ -85,7 +85,7 @@ export default function CitizenDashboard() {
             .eq('is_read', false),
           supabase
             .from('reports')
-            .select('id, title, status, garbage_type, address, created_at')
+            .select('id, title, status, garbage_type, severity, address, created_at')
             .eq('citizen_id', citizenId)
             .order('created_at', { ascending: false })
             .limit(5),
@@ -234,55 +234,96 @@ export default function CitizenDashboard() {
       <UserNavbar />
 
       <main className="citizen-main-content" role="main">
-        {/* 1. Dashboard Header */}
-        <header className="citizen-hero-card">
-          <div className="citizen-hero-top">
-            <div className="citizen-header-info">
-              <div className="citizen-header-avatar" aria-hidden="true">
-                📍
-              </div>
-              <div className="citizen-header-text">
-                <h1>Welcome back, {displayName}</h1>
-                <div className="citizen-meta">
-                  <span>Citizen Operations Portal</span>
-                  {displayEmail && <span className="citizen-email">{displayEmail}</span>}
-                </div>
+        {/* 1. Large Premium Green Hero (Base44 Visual Blueprint) */}
+        <header className="citizen-hero-card" aria-label="Citizen Portal Hero Banner">
+          <div className="hero-mesh-overlay" aria-hidden="true" />
+          <div className="hero-content">
+            {/* Top Eyebrow Row */}
+            <div className="hero-top-bar">
+              <button
+                type="button"
+                className="hero-eyebrow-pill"
+                onClick={handleReportGarbageClick}
+                aria-label="Report missed garbage pickup now"
+              >
+                <span className="eyebrow-sparkle" aria-hidden="true">✨</span>
+                <span>Missed garbage pickup? Report it now.</span>
+              </button>
+
+              <div className="hero-user-context" title={displayEmail || displayName}>
+                <span className="user-context-dot" aria-hidden="true" />
+                <span>Citizen: {displayName}</span>
               </div>
             </div>
 
-            <div className="citizen-actions-bar" style={{ border: 'none', padding: 0 }}>
+            {/* Main Headline & Supporting Copy */}
+            <div className="hero-body">
+              <h1 className="hero-headline">
+                Report. Track.<br />
+                Get it cleaned.
+              </h1>
+              <p className="hero-description">
+                Capture your live location, snap a photo, and your report is instantly auto-assigned to the nearest municipal worker for pickup.
+              </p>
+            </div>
+
+            {/* Bottom Row: Feature Pills & White Report CTA */}
+            <div className="hero-bottom-row">
+              <div className="hero-feature-pills">
+                <span className="feature-pill">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <span>GPS Location</span>
+                </span>
+                <span className="feature-pill">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  <span>Auto-Assigned</span>
+                </span>
+                <span className="feature-pill">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                  <span>Real-time Status</span>
+                </span>
+              </div>
+
               <button
                 type="button"
-                className="btn-report-garbage"
+                className="hero-report-btn"
                 onClick={handleReportGarbageClick}
                 aria-label="Report Garbage Incident"
               >
-                <span className="btn-icon" aria-hidden="true">📢</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
                 <span>Report Garbage</span>
               </button>
             </div>
           </div>
-
-          <p className="citizen-hero-description">
-            Report public waste accumulation in your neighborhood, track assigned municipal cleanup teams, and receive verified resolution alerts in real time.
-          </p>
         </header>
 
-        {/* 5. Loading / Error State Handling */}
+        {/* 2. Loading / Error State Handling */}
         {loading ? (
           <div className="state-box" aria-live="polite">
-            <div className="auth-spinner" style={{ width: '36px', height: '36px' }} />
+            <div className="auth-spinner" style={{ width: '40px', height: '40px' }} />
             <h2 className="state-title">Loading Citizen Dashboard...</h2>
             <p className="state-desc">Retrieving your reports summary and municipal notifications.</p>
           </div>
         ) : error ? (
-          <div className="state-box" role="alert">
+          <div className="state-box state-box-error" role="alert">
             <span className="state-icon" aria-hidden="true">⚠️</span>
             <h2 className="state-title">Unable to Load Dashboard</h2>
             <p className="state-desc">{error}</p>
             <button
               type="button"
-              className="btn-report-garbage state-action-btn"
+              className="btn-retry-action"
               onClick={handleRetry}
             >
               <span>Try Again</span>
@@ -290,128 +331,96 @@ export default function CitizenDashboard() {
           </div>
         ) : (
           <>
-            {/* 2. Summary Cards Grid */}
-            <section aria-labelledby="summary-heading">
-              <div className="section-header">
-                <h2 id="summary-heading">Activity Overview</h2>
-                <span className="section-badge section-badge-live">
-                  <span className="live-dot" aria-hidden="true"></span>
-                  Live Dispatch
-                </span>
-              </div>
-
-              <div className="citizen-stats-grid">
+            {/* 3. Minimalist KPI Cards (Base44 Composition) */}
+            <section aria-label="Incident Metrics" className="kpi-cards-section">
+              <div className="kpi-grid">
                 {/* Card 1: Total Reports */}
-                <article className="stat-card">
-                  <div className="stat-card-header">
-                    <h3 className="stat-card-title">Total Reports</h3>
-                    <div className="stat-card-icon stat-icon-total" aria-hidden="true">
-                      📋
-                    </div>
+                <article className="kpi-card">
+                  <div className="kpi-icon-tile" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
                   </div>
-                  <div className="stat-card-value">
-                    <span>{stats.total}</span>
-                    <span className="stat-state-badge">Filed</span>
-                  </div>
-                  <p className="stat-card-description">
-                    Total waste incidents submitted from your account
-                  </p>
+                  <div className="kpi-value">{stats.total}</div>
+                  <div className="kpi-label">Total Reports</div>
                 </article>
 
                 {/* Card 2: Active Reports */}
-                <article className="stat-card">
-                  <div className="stat-card-header">
-                    <h3 className="stat-card-title">Active Reports</h3>
-                    <div className="stat-card-icon stat-icon-active" aria-hidden="true">
-                      ⏳
-                    </div>
+                <article className="kpi-card">
+                  <div className="kpi-icon-tile" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
                   </div>
-                  <div className="stat-card-value">
-                    <span>{stats.active}</span>
-                    <span className="stat-state-badge">
-                      {stats.active > 0 ? 'In Action' : 'All Clear'}
-                    </span>
-                  </div>
-                  <p className="stat-card-description">
-                    Incidents currently pending, assigned, or in progress
-                  </p>
+                  <div className="kpi-value">{stats.active}</div>
+                  <div className="kpi-label">Active</div>
                 </article>
 
                 {/* Card 3: Resolved Reports */}
-                <article className="stat-card">
-                  <div className="stat-card-header">
-                    <h3 className="stat-card-title">Resolved Reports</h3>
-                    <div className="stat-card-icon stat-icon-resolved" aria-hidden="true">
-                      ✅
-                    </div>
+                <article className="kpi-card">
+                  <div className="kpi-icon-tile" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
                   </div>
-                  <div className="stat-card-value">
-                    <span>{stats.resolved}</span>
-                    <span className="stat-state-badge">
-                      {stats.resolved > 0 ? 'Verified' : 'Pending'}
-                    </span>
-                  </div>
-                  <p className="stat-card-description">
-                    Incidents cleaned and verified with resolution evidence
-                  </p>
+                  <div className="kpi-value">{stats.resolved}</div>
+                  <div className="kpi-label">Resolved</div>
                 </article>
 
                 {/* Card 4: Notifications */}
-                <article className="stat-card">
-                  <div className="stat-card-header">
-                    <h3 className="stat-card-title">Notifications</h3>
-                    <div className="stat-card-icon stat-icon-notifs" aria-hidden="true">
-                      🔔
-                    </div>
+                <article className="kpi-card">
+                  <div className="kpi-icon-tile" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
                   </div>
-                  <div className="stat-card-value">
-                    <span>{stats.notifications}</span>
-                    <span className="stat-state-badge">
-                      {stats.unreadNotifications > 0
-                        ? `${stats.unreadNotifications} Unread`
-                        : 'All Read'}
-                    </span>
+                  <div className="kpi-value">{stats.notifications}</div>
+                  <div className="kpi-label">
+                    Notifications {stats.unreadNotifications > 0 && <span className="kpi-unread-badge">({stats.unreadNotifications} new)</span>}
                   </div>
-                  <p className="stat-card-description">
-                    Updates, status changes, and dispatch alerts
-                  </p>
                 </article>
               </div>
             </section>
 
-            {/* 3 & 4. Recent Reports & Recent Notifications Grid */}
-            <div className="citizen-dashboard-grid">
-              {/* 3. Recent Reports Section */}
-              <section className="citizen-dashboard-section" aria-labelledby="recent-reports-heading">
-                <div className="citizen-section-header">
-                  <div>
-                    <h2 id="recent-reports-heading">
-                      <span aria-hidden="true">📋</span> Recent Reports
-                    </h2>
-                  </div>
-                  <Link to="/citizen/reports" className="btn-secondary-link">
-                    View All Reports ({stats.total}) &rarr;
+            {/* 4 & 5. Recent Reports & Notifications Grid */}
+            <div className="citizen-content-grid">
+              {/* Recent Reports Section */}
+              <section className="citizen-panel-card" aria-labelledby="recent-reports-heading">
+                <div className="panel-card-header">
+                  <h2 id="recent-reports-heading" className="panel-title">
+                    Recent Reports
+                  </h2>
+                  <Link to="/citizen/reports" className="panel-view-all-link" aria-label="View all citizen reports">
+                    View all &rarr;
                   </Link>
                 </div>
 
                 {recentReports.length === 0 ? (
-                  <div className="state-box" style={{ padding: '2.5rem 1.5rem' }}>
-                    <span className="state-icon" aria-hidden="true">📋</span>
-                    <h3 className="state-title">No Reports Filed Yet</h3>
-                    <p className="state-desc">
-                      You haven&apos;t filed any waste incident reports yet. Use the button below to report waste accumulation in your area.
+                  <div className="compact-empty-state">
+                    <div className="empty-state-icon-circle" aria-hidden="true">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                    </div>
+                    <h3 className="empty-state-title">No reports yet</h3>
+                    <p className="empty-state-desc">
+                      You haven&apos;t filed any waste incident reports yet. Use the button below to report waste accumulation.
                     </p>
                     <button
                       type="button"
-                      className="btn-report-garbage state-action-btn"
+                      className="empty-cta-btn"
                       onClick={handleReportGarbageClick}
                     >
-                      <span className="btn-icon" aria-hidden="true">📢</span>
-                      <span>File Your First Report</span>
+                      <span aria-hidden="true">📢</span>
+                      <span>Report Garbage</span>
                     </button>
                   </div>
                 ) : (
-                  <div className="recent-reports-list">
+                  <div className="reports-row-list">
                     {recentReports.map((report) => {
                       const typeConfig = GARBAGE_TYPE_CONFIG[report.garbage_type] || {
                         label: report.garbage_type || 'General Waste',
@@ -421,7 +430,7 @@ export default function CitizenDashboard() {
                       return (
                         <div
                           key={report.id}
-                          className="recent-report-item"
+                          className="report-row-item"
                           onClick={() => navigate(`/citizen/reports/${report.id}`)}
                           role="button"
                           tabIndex={0}
@@ -433,72 +442,78 @@ export default function CitizenDashboard() {
                             }
                           }}
                         >
-                          <div className="recent-report-info">
-                            <div className="recent-report-top">
-                              <h4 className="recent-report-title">{report.title}</h4>
+                          <div className="report-row-left">
+                            <div className="report-row-title-bar">
+                              <h4 className="report-row-title">{report.title}</h4>
                               <ReportStatusBadge status={report.status} size="small" />
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                              <span className="garbage-type-badge">
+                            <div className="report-row-meta">
+                              <span className="report-type-tag">
                                 <span aria-hidden="true">{typeConfig.icon}</span>
                                 <span>{typeConfig.label}</span>
                               </span>
+                              {report.severity && (
+                                <span className={`severity-badge severity-${report.severity}`}>
+                                  {report.severity}
+                                </span>
+                              )}
+                              <span className="report-row-address">
+                                <span aria-hidden="true">📍</span>
+                                <span>{report.address || 'Location recorded'}</span>
+                              </span>
+                              <span className="report-row-time">
+                                {formatDate(report.created_at)}
+                              </span>
                             </div>
-
-                            <p className="recent-report-address">
-                              <span aria-hidden="true">📍</span>
-                              <span>{report.address || 'Address recorded'}</span>
-                            </p>
-
-                            <span className="recent-report-date">
-                              Reported on {formatDate(report.created_at)}
-                            </span>
                           </div>
 
-                          <span className="item-arrow-icon" aria-hidden="true">
+                          <div className="report-row-arrow" aria-hidden="true">
                             &rarr;
-                          </span>
+                          </div>
                         </div>
                       );
                     })}
 
-                    <div className="tab-pane-footer">
-                      <Link to="/citizen/reports" className="btn-secondary-link full-width-link">
-                        Manage and Track All My Reports &rarr;
+                    <div className="panel-footer">
+                      <Link to="/citizen/reports" className="panel-footer-link">
+                        Manage and track all my reports &rarr;
                       </Link>
                     </div>
                   </div>
                 )}
               </section>
 
-              {/* 4. Recent Notifications Section */}
-              <section className="citizen-dashboard-section" aria-labelledby="recent-notifs-heading">
-                <div className="citizen-section-header">
-                  <div>
-                    <h2 id="recent-notifs-heading">
-                      <span aria-hidden="true">🔔</span> Notifications
-                    </h2>
-                  </div>
-                  <Link to="/citizen/notifications" className="btn-secondary-link">
-                    View All ({stats.notifications}) &rarr;
+              {/* Notifications Section */}
+              <section className="citizen-panel-card" aria-labelledby="notifications-heading">
+                <div className="panel-card-header">
+                  <h2 id="notifications-heading" className="panel-title">
+                    Notifications
+                  </h2>
+                  <Link to="/citizen/notifications" className="panel-view-all-link" aria-label="View all notifications">
+                    View all &rarr;
                   </Link>
                 </div>
 
                 {recentNotifications.length === 0 ? (
-                  <div className="state-box" style={{ padding: '2.5rem 1.5rem' }}>
-                    <span className="state-icon" aria-hidden="true">🔔</span>
-                    <h3 className="state-title">No Notifications Yet</h3>
-                    <p className="state-desc">
-                      You are all caught up. When municipal crews update your reports or complete cleanup, notifications will appear here.
+                  <div className="compact-empty-state">
+                    <div className="empty-state-icon-circle" aria-hidden="true">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                      </svg>
+                    </div>
+                    <h3 className="empty-state-title">No notifications yet</h3>
+                    <p className="empty-state-desc">
+                      You are all caught up. When municipal crews update your reports, updates will appear here.
                     </p>
                   </div>
                 ) : (
-                  <div className="recent-notifications-list">
+                  <div className="notifications-row-list">
                     {recentNotifications.map((notif) => (
                       <div
                         key={notif.id}
-                        className={`recent-notif-item ${!notif.is_read ? 'unread' : ''}`}
+                        className={`notif-row-item ${!notif.is_read ? 'unread' : ''}`}
                         onClick={() => handleNotificationClick(notif)}
                         role="button"
                         tabIndex={0}
@@ -510,22 +525,25 @@ export default function CitizenDashboard() {
                           }
                         }}
                       >
-                        <div className="recent-notif-icon">
-                          {!notif.is_read && <span className="notif-unread-dot" aria-label="Unread alert" />}
-                          <span aria-hidden="true">🔔</span>
+                        <div className="notif-row-icon" aria-hidden="true">
+                          {!notif.is_read && <span className="notif-unread-pulse" />}
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                          </svg>
                         </div>
-                        <div className="recent-notif-body">
-                          <h4 className="recent-notif-title">{notif.title}</h4>
-                          <p className="recent-notif-msg">{notif.message}</p>
-                          <span className="recent-notif-time">
+                        <div className="notif-row-content">
+                          <h4 className="notif-row-title">{notif.title}</h4>
+                          <p className="notif-row-msg">{notif.message}</p>
+                          <span className="notif-row-time">
                             {formatNotificationTime(notif.created_at)}
                           </span>
                         </div>
                       </div>
                     ))}
 
-                    <div className="tab-pane-footer">
-                      <Link to="/citizen/notifications" className="btn-secondary-link full-width-link">
+                    <div className="panel-footer">
+                      <Link to="/citizen/notifications" className="panel-footer-link">
                         Open Notification Center &rarr;
                       </Link>
                     </div>

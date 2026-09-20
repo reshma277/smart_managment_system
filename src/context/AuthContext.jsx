@@ -41,10 +41,13 @@ export function AuthProvider({ children }) {
 
       if (data) {
         setProfile(data);
-        if (data.is_active === false) {
+        const resolvedRole = data.role || 'citizen';
+        // For non-workers, is_active === false indicates account suspension.
+        // For workers, is_active represents on-duty / off-duty operational status.
+        if (data.is_active === false && resolvedRole !== 'worker') {
           setRole('disabled');
         } else {
-          setRole(data.role || 'citizen');
+          setRole(resolvedRole);
         }
         return data;
       } else {
@@ -138,7 +141,8 @@ export function AuthProvider({ children }) {
 
       if (data?.user) {
         const userProfile = await loadProfile(data.user.id);
-        const isActive = userProfile?.is_active !== false;
+        const isWorker = userProfile?.role === 'worker';
+        const isActive = isWorker || userProfile?.is_active !== false;
         return { 
           success: true, 
           user: data.user, 
@@ -264,8 +268,8 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Helper flag for deactivated accounts
-  const isDeactivated = profile ? profile.is_active === false : false;
+  // Helper flag for deactivated accounts (workers are not deactivated when off-duty)
+  const isDeactivated = profile ? (profile.is_active === false && profile.role !== 'worker') : false;
 
   const value = {
     user,
