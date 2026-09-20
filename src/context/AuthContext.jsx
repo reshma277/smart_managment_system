@@ -35,7 +35,6 @@ export function AuthProvider({ children }) {
 
       if (profileErr) {
         console.warn('Could not load profile from database:', profileErr.message);
-        setRole('citizen');
         return null;
       }
 
@@ -50,13 +49,10 @@ export function AuthProvider({ children }) {
           setRole(resolvedRole);
         }
         return data;
-      } else {
-        setRole('citizen');
-        return null;
       }
+      return null;
     } catch (err) {
       console.warn('Profile load error:', err);
-      setRole('citizen');
       return null;
     }
   }, []);
@@ -71,7 +67,7 @@ export function AuthProvider({ children }) {
         const { data: { session: initialSession }, error: sessionErr } = await supabase.auth.getSession();
 
         if (sessionErr && isMounted) {
-          setError(mapAuthError(sessionErr));
+          console.warn('Session retrieval error:', sessionErr.message);
         }
 
         if (isMounted) {
@@ -86,9 +82,7 @@ export function AuthProvider({ children }) {
           setRole(null);
         }
       } catch (err) {
-        if (isMounted) {
-          setError(mapAuthError(err));
-        }
+        console.warn('Auth initialization error:', err);
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -103,17 +97,24 @@ export function AuthProvider({ children }) {
       if (!isMounted) return;
 
       setSession(newSession);
-      setUser(newSession?.user ?? null);
+      const currentUser = newSession?.user ?? null;
+      setUser(currentUser);
 
-      if (newSession?.user) {
-        // Keep loading true while profile and role are being resolved
+      if (currentUser) {
+        // Maintain loading active until profile and role are resolved
         setLoading(true);
-        await loadProfile(newSession.user.id);
+        try {
+          await loadProfile(currentUser.id);
+        } finally {
+          if (isMounted) {
+            setLoading(false);
+          }
+        }
       } else {
         setProfile(null);
         setRole(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => {
@@ -124,13 +125,17 @@ export function AuthProvider({ children }) {
 
   /**
    * Signs in an existing user with email and password.
+   * Isolates Supabase Auth credential verification from profile lookup.
+   * Profile/role retrieval issues NEVER produce an "Invalid credentials" error.
    */
   const signIn = async (email, password) => {
     setError(null);
+    let authData;
+
     try {
       const { data, error: signInErr } = await supabase.auth.signInWithPassword({
         email: email.trim(),
-        password,
+        password, // password passed unchanged
       });
 
       if (signInErr) {
@@ -139,24 +144,39 @@ export function AuthProvider({ children }) {
         return { success: false, error: friendlyError };
       }
 
-      if (data?.user) {
-        const userProfile = await loadProfile(data.user.id);
-        const isWorker = userProfile?.role === 'worker';
-        const isActive = isWorker || userProfile?.is_active !== false;
-        return { 
-          success: true, 
-          user: data.user, 
-          role: isActive ? (userProfile?.role || 'citizen') : 'disabled',
-          isActive,
-        };
-      }
-
-      return { success: true };
+      authData = data;
     } catch (err) {
       const friendlyError = mapAuthError(err);
       setError(friendlyError);
       return { success: false, error: friendlyError };
     }
+
+    // Credential authentication succeeded; resolve user profile and role safely
+    if (authData?.user) {
+      try {
+        const userProfile = await loadProfile(authData.user.id);
+        const resolvedRole = userProfile?.role || 'citizen';
+        const isWorker = resolvedRole === 'worker';
+        const isActive = isWorker || userProfile?.is_active !== false;
+
+        return { 
+          success: true, 
+          user: authData.user, 
+          role: isActive ? resolvedRole : 'disabled',
+          isActive,
+        };
+      } catch (profileErr) {
+        console.warn('Profile retrieval error post-authentication:', profileErr);
+        return { 
+          success: true, 
+          user: authData.user, 
+          role: 'citizen',
+          isActive: true,
+        };
+      }
+    }
+
+    return { success: true };
   };
 
   /**

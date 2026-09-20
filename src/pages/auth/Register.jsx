@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -15,6 +15,11 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
+
+  // Clear any stale errors on component mount
+  useEffect(() => {
+    setError(null);
+  }, [setError]);
 
   // Redirect authenticated users away from register page
   if (!loading && user) {

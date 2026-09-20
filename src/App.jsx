@@ -63,10 +63,8 @@ function RootRedirect() {
   if (role === 'worker') {
     return <Navigate to="/worker" replace />;
   }
-  if (role === 'citizen') {
-    return <Navigate to="/citizen" replace />;
-  }
-  return <Navigate to="/login" replace />;
+  // Default authenticated and active role is citizen
+  return <Navigate to="/citizen" replace />;
 }
 
 export default function App() {

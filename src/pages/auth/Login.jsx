@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export default function Login() {
-  const { user, loading, signIn, error, setError } = useAuth();
+  const { user, role, loading, signIn, error, setError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -13,9 +13,20 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
 
-  // Redirect authenticated users away from login page to home or their dashboard
-  if (!loading && user) {
-    return <Navigate to="/" replace />;
+  // Clear any stale errors on component mount
+  useEffect(() => {
+    setError(null);
+  }, [setError]);
+
+  // Only redirect already-authenticated users when NOT actively submitting the form
+  // AND once both session and role have fully resolved
+  if (!submitting && !loading && user && role) {
+    const destination = role === 'admin' 
+      ? '/admin' 
+      : role === 'worker' 
+      ? '/worker' 
+      : '/citizen';
+    return <Navigate to={destination} replace />;
   }
 
   const handleSubmit = async (e) => {
@@ -23,8 +34,8 @@ export default function Login() {
     setValidationError('');
     setError(null);
 
-    // Basic client validation
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setValidationError('Please enter your email address.');
       return;
     }
@@ -34,27 +45,30 @@ export default function Login() {
     }
 
     setSubmitting(true);
-    const result = await signIn(email, password);
-    setSubmitting(false);
+    try {
+      const result = await signIn(trimmedEmail, password);
 
-    if (result.success) {
-      if (!result.isActive || result.role === 'disabled') {
-        navigate('/', { replace: true });
-        return;
-      }
+      if (result.success) {
+        if (!result.isActive || result.role === 'disabled') {
+          navigate('/', { replace: true });
+          return;
+        }
 
-      // Redirect based on role or intended destination
-      const from = location.state?.from?.pathname;
-      if (from && from !== '/login') {
-        navigate(from, { replace: true });
-      } else {
-        const destination = result.role === 'admin' 
-          ? '/admin' 
-          : result.role === 'worker' 
-          ? '/worker' 
-          : '/citizen';
-        navigate(destination, { replace: true });
+        // Redirect based on role or intended destination
+        const from = location.state?.from?.pathname;
+        if (from && from !== '/login') {
+          navigate(from, { replace: true });
+        } else {
+          const destination = result.role === 'admin' 
+            ? '/admin' 
+            : result.role === 'worker' 
+            ? '/worker' 
+            : '/citizen';
+          navigate(destination, { replace: true });
+        }
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 

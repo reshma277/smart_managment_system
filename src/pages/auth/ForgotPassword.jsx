@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -9,6 +9,11 @@ export default function ForgotPassword() {
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [sentSuccess, setSentSuccess] = useState(false);
+
+  // Clear any stale errors on component mount
+  useEffect(() => {
+    setError(null);
+  }, [setError]);
 
   // Redirect authenticated users away from forgot password page
   if (!loading && user) {
